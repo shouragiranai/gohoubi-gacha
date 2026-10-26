@@ -393,6 +393,12 @@ h2{font-size:18px;margin:4px 0 12px}
 .wkpick button{min-height:50px;border-radius:12px;background:rgba(0,0,0,.25);border:2px solid var(--line);font-weight:900;font-size:16px}
 .wkpick button.sun{color:#ff8fa0}.wkpick button.sat{color:#8fc8ff}
 .wkpick button.on{background:linear-gradient(135deg,#ff4fa3,#ff8a3d);border-color:transparent;color:#fff}
+.protst{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.prow{display:flex;gap:10px;align-items:flex-start;background:rgba(0,0,0,.22);border-radius:12px;padding:10px}
+.prow b{display:block;font-size:14px}.prow small{display:block;font-size:11px;color:var(--sub);line-height:1.5;margin-top:2px}
+.bkban{display:flex;flex-direction:column;gap:10px;background:linear-gradient(135deg,#123c66,#2b2f8a);border:1px solid #3d6bd6;border-radius:16px;padding:12px 14px;margin-bottom:14px}
+.bkban b{display:block}.bkban small{display:block;font-size:12px;color:#cfe3ff;margin-top:4px;line-height:1.5}
+.bkbtns{display:flex;gap:8px}.bkbtns .btn{flex:1}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -400,6 +406,7 @@ h2{font-size:18px;margin:4px 0 12px}
 <div id="app">
   <section class="view active" id="v-home">
     <div class="top"><div><div class="date" id="today"></div><h1>タスク モンスターズ</h1></div></div>
+    <div id="bkBanner"></div>
     <div class="card streak" id="streakCard">
       <div class="fire">🔥</div>
       <div class="snum"><b id="streakNum">0</b><span>日連続</span></div>
@@ -479,15 +486,18 @@ h2{font-size:18px;margin:4px 0 12px}
       </div>
     </div>
     <div class="card">
-      <div class="ttl">データ</div>
+      <div class="ttl">💾 データの まもり</div>
+      <div class="protst" id="protStatus"></div>
       <div class="tgrid">
-        <button class="btn sm" data-act="export">バックアップ保存</button>
-        <button class="btn sm" data-act="import">バックアップ読込</button>
+        <button class="btn sm primary" data-act="export">バックアップを 保存</button>
+        <button class="btn sm" data-act="import">ファイルから もどす</button>
       </div>
+      <div style="height:8px"></div>
+      <button class="btn sm wide" data-act="snapList">🕒 自動バックアップから もどす</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
       <div style="height:8px"></div>
       <button class="btn sm danger wide" data-act="resetAll">すべてのデータを消去</button>
-      <p class="note">データはこの端末のブラウザ内(localStorage)にだけ保存されます。機種変更前などはバックアップを保存してください。<br>仲間モンスターの確率データ出典:cour89.com(ドラクエ5攻略)。モンスターの絵はこのアプリ用のオリジナル図形です。</p>
+      <p class="note">バックアップを保存すると、iPhoneでは共有メニューが ひらきます。「"ファイル"に保存」→ iCloud Drive を えらぶと、機種変更しても もどせます。<br>仲間モンスターの確率データ出典:cour89.com(ドラクエ5攻略)。モンスターの絵はこのアプリ用のオリジナル図形です。</p>
     </div>
   </section>
 </div>
@@ -548,21 +558,29 @@ const PAL=[['#3fa9ff','#8fd3ff','#ffffff','#2b6bff','#7ef0ff'],['#ffc83d','#ffe2
 const KEY='rewardGacha.v1';
 const fresh=()=>({v:1,tasks:{},bonus:{},hist:{},mlog:{},mons:{},party:[null,null,null,null],
   settings:{sound:true,vib:true,auto:false},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{}});
+// 古い形式のデータを今の形式にそろえる
+function migrate(s){
+  const f=fresh(),o={...f,...s,settings:{...f.settings,...s.settings},stats:{...f.stats,...s.stats}};
+  // 旧バージョン(1日3つ・ご褒美ガチャ)の今日のタスクを引きつぐ
+  if(s.day&&s.day.tasks&&s.day.tasks.length&&!o.tasks[s.day.date])o.tasks[s.day.date]=s.day.tasks.map(t=>({id:t.id,text:t.text,done:!!t.done,at:t.at}));
+  delete o.day;delete o.rewards;delete o.timer;
+  return o;
+}
+let LOADSTATE='empty';
 function load(){
-  try{
-    const s=JSON.parse(localStorage.getItem(KEY));
-    if(s&&s.v===1){
-      const f=fresh(),o={...f,...s,settings:{...f.settings,...s.settings},stats:{...f.stats,...s.stats}};
-      // 旧バージョン(1日3つ・ご褒美ガチャ)の今日のタスクを引きつぐ
-      if(s.day&&s.day.tasks&&s.day.tasks.length&&!o.tasks[s.day.date])o.tasks[s.day.date]=s.day.tasks.map(t=>({id:t.id,text:t.text,done:!!t.done,at:t.at}));
-      delete o.day;delete o.rewards;delete o.timer;
-      return o;
-    }
-  }catch(e){}
+  let raw=null;
+  try{raw=localStorage.getItem(KEY);}catch(e){LOADSTATE='noaccess';return fresh();}
+  if(!raw)return fresh();
+  try{const s=JSON.parse(raw);if(s&&s.v===1){LOADSTATE='ok';return migrate(s);}}catch(e){}
+  // 読めないデータは消さずに別の場所へ退避しておく
+  LOADSTATE='corrupt';try{localStorage.setItem(KEY+'.broken-'+Date.now(),raw);}catch(e){}
   return fresh();
 }
 let S=load();
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('保存に失敗しました');}}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){toast('⚠️ 保存に失敗しました。設定から バックアップを 保存してください');}
+  mirrorSoon();
+}
 let LASTDAY=dkey();
 function checkDay(){const k=dkey();if(k!==LASTDAY){LASTDAY=k;return true;}return false;}
 const WD='日月火水木金土';
@@ -934,6 +952,7 @@ function taskPanel(key,pid){
 }
 function renderHome(){
   if(materialize(dkey()))save();
+  renderBanner();
   const st=streak(),tk=dkey(),tm=addDays(tk,1),d=new Date();
   $('#today').textContent=`${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
   $('#streakNum').textContent=st;$('#goldNum').textContent=S.gold.toLocaleString();$('#bestNum').textContent=Math.max(bestStreak(),st);
@@ -1020,7 +1039,7 @@ function itemDialog(n){
   modal(`<h3>${itemIcon(n)} ${esc(n)} <small class="dim">×${cnt}</small></h3><p class="note">${statLabel(it)} ${it&&it.eff?esc(it.eff):''}</p>${body}
   <div class="acts">${it&&it.sell?`<button class="btn" data-act="sellDlg" data-n="${esc(n)}">うる(${it.sell.toLocaleString()}G)</button>`:''}<button class="btn" data-act="closeModal">閉じる</button></div>`);
 }
-function renderSet(){$('#swSound').classList.toggle('on',S.settings.sound);$('#swVib').classList.toggle('on',S.settings.vib);$('#swAuto').classList.toggle('on',S.settings.auto);}
+function renderSet(){$('#swSound').classList.toggle('on',S.settings.sound);$('#swVib').classList.toggle('on',S.settings.vib);$('#swAuto').classList.toggle('on',S.settings.auto);renderProt();}
 function showView(v){
   VIEW=v;document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id==='v-'+v));
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
@@ -1031,6 +1050,106 @@ function showView(v){
 function modal(html){const m=$('#modal');$('#sheet').innerHTML=html;m.hidden=false;requestAnimationFrame(()=>requestAnimationFrame(()=>m.classList.add('show')));}
 function closeModal(){const m=$('#modal');m.classList.remove('show');setTimeout(()=>{if(!m.classList.contains('show'))m.hidden=true;},260);}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
+
+/* ===== データの まもり =====
+   1) localStorage と IndexedDB の2か所に保存(片方が消えても、もう片方から自動で復元)
+   2) 毎日の自動スナップショットを14日分+消去・復元の直前に自動保存
+   3) ブラウザに「消さないで」(永続ストレージ)をお願いする
+   4) ファイルへのバックアップ(スマホは共有メニューで iCloud Drive などへ)と、7日ごとのお知らせ */
+const IDB={
+  db:null,
+  open(){return this.db||(this.db=new Promise((res,rej)=>{const r=indexedDB.open('taskmonsters',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}));},
+  async run(mode,fn){const db=await this.open();return new Promise((res,rej)=>{const t=db.transaction('kv',mode),q=fn(t.objectStore('kv'));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);});},
+  get(k){return this.run('readonly',s=>s.get(k));},
+  set(k,v){return this.run('readwrite',s=>s.put(v,k));},
+  del(k){return this.run('readwrite',s=>s.delete(k));},
+  keys(){return this.run('readonly',s=>s.getAllKeys());},
+};
+const SNAP_DAYS=14,SNAP_PRE=10;
+let BOOTED=false,PERSIST=null,MIRROR_T=0,LAST_MIRROR=0;
+const clone=o=>JSON.parse(JSON.stringify(o));
+// データの中身があるか(空のデータで、ちゃんとしたデータを上書きしないため)
+const hasData=s=>!!s&&(Object.keys(s.mons||{}).length+Object.keys(s.tasks||{}).length+Object.keys(s.hist||{}).length+(s.routines||[]).length+(s.gold||0))>0;
+const summary=s=>`なかま${Object.values(s.mons||{}).reduce((a,x)=>a+x.length,0)}匹・タスク${Object.values(s.tasks||{}).reduce((a,x)=>a+x.length,0)}件・${(s.gold||0).toLocaleString()}G`;
+function mirrorSoon(){if(!BOOTED)return;clearTimeout(MIRROR_T);MIRROR_T=setTimeout(mirrorNow,800);}
+async function mirrorNow(){
+  if(!BOOTED)return;
+  try{
+    const data=clone(S);await IDB.set('current',data);
+    if(hasData(data))await IDB.set('snap:'+dkey(),{at:Date.now(),label:'自動',data});
+    LAST_MIRROR=Date.now();await pruneSnaps();
+  }catch(e){}
+}
+async function snapNow(label){try{await IDB.set('pre:'+Date.now(),{at:Date.now(),label,data:clone(S)});await pruneSnaps();}catch(e){}}
+async function pruneSnaps(){
+  const ks=(await IDB.keys()).map(String);
+  const drop=[...ks.filter(k=>k.startsWith('snap:')).sort().reverse().slice(SNAP_DAYS),...ks.filter(k=>k.startsWith('pre:')).sort((a,b)=>+b.slice(4)-+a.slice(4)).slice(SNAP_PRE)];
+  for(const k of drop)await IDB.del(k);
+}
+async function listSnaps(){
+  const ks=(await IDB.keys()).map(String).filter(k=>k.startsWith('snap:')||k.startsWith('pre:')),out=[];
+  for(const k of ks){const v=await IDB.get(k);if(v&&v.data)out.push({k,...v});}
+  return out.sort((a,b)=>b.at-a.at);
+}
+async function protectInit(){
+  try{if(navigator.storage&&navigator.storage.persist)PERSIST=(await navigator.storage.persisted())||(await navigator.storage.persist());}catch(e){}
+  try{
+    const cur=await IDB.get('current');
+    // localStorage が空・壊れている・中身がないのに、IndexedDB に中身があれば自動で復元
+    if(cur&&cur.v===1&&hasData(cur)&&!hasData(S)){
+      S=migrate(cur);try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
+      renderAll();
+      modal(`<h3>🛟 データを ふくげんしました</h3><p>ブラウザの保存データが ${LOADSTATE==='corrupt'?'こわれていた':'見つからなかった'}ため、もう1か所に保存していた データから 自動で もどしました。</p><p class="note">${summary(S)}</p><div class="acts"><button class="btn primary" data-act="closeModal">OK</button></div>`);
+    }
+  }catch(e){}
+  if(!S.since)S.since=Date.now();
+  BOOTED=true;save();
+  if(VIEW==='set')renderProt();
+}
+async function exportData(){
+  const name=`taskmonsters-backup-${dkey()}.json`,file=new File([JSON.stringify(S)],name,{type:'application/json'});
+  const done=()=>{S.lastExport=Date.now();delete S.bkSnooze;save();renderAll();toast('バックアップを 保存しました');};
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:'タスクモンスターズ バックアップ'});return done();}
+    catch(e){if(e&&e.name==='AbortError')return;}
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500);done();
+}
+async function restoreFrom(data,label){
+  await snapNow(label);
+  S=migrate(data);save();await mirrorNow();renderAll();toast('データを もどしました');
+}
+const daysSince=t=>t?Math.floor((Date.now()-t)/864e5):null;
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+function renderBanner(){
+  const el=$('#bkBanner');if(!el)return;
+  const d=daysSince(S.lastExport||S.since);
+  const show=hasData(S)&&d!=null&&d>=7&&S.bkSnooze!==dkey();
+  el.innerHTML=show?`<div class="bkban"><div><b>💾 バックアップ しませんか?</b><small>${S.lastExport?`さいごの バックアップから ${d}日`:'まだ 一度も バックアップしていません'}。iCloud Drive などに 保存しておくと 機種変更でも あんしん。</small></div><div class="bkbtns"><button class="btn sm primary" data-act="export">保存する</button><button class="btn sm" data-act="bkLater">あとで</button></div></div>`:'';
+}
+async function renderProt(){
+  const el=$('#protStatus');if(!el)return;
+  let snaps=[],est=null;
+  try{snaps=await listSnaps();}catch(e){}
+  try{if(navigator.storage&&navigator.storage.estimate)est=await navigator.storage.estimate();}catch(e){}
+  const d=daysSince(S.lastExport),last=snaps[0];
+  const row=(ok,t,s)=>`<div class="prow"><span>${ok===true?'✅':ok===false?'⚠️':'ℹ️'}</span><div><b>${t}</b>${s?`<small>${s}</small>`:''}</div></div>`;
+  el.innerHTML=
+    row(BOOTED&&LAST_MIRROR>0,'この端末の 2か所に 自動保存',BOOTED?'ブラウザの保存領域+データベース(IndexedDB)。片方が消えても 自動で もどします':'じゅんびちゅう…')+
+    row(PERSIST===true?true:PERSIST===false?false:null,'消えにくい保存(永続ストレージ)',PERSIST===true?'ブラウザに「消さないで」と 許可されています':PERSIST===false?'ブラウザが まだ 許可していません。ホーム画面に追加して使うと 許可されやすくなります':'このブラウザは 対応していません')+
+    row(isStandalone(),'ホーム画面アプリで 起動',isStandalone()?'iPhoneの 7日間ルール(使わないサイトのデータ削除)の 対象外です':'ブラウザで ひらいています。ホーム画面に追加した アプリから 使うと 消えにくくなります(ブラウザ版とは データが 別です)')+
+    row(snaps.length>0,`自動バックアップ ${snaps.length}こ`,last?`さいしん: ${new Date(last.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}(${SNAP_DAYS}日分+消去・復元の直前)`:'まだ ありません')+
+    row(d!=null&&d<7,'ファイルへの バックアップ',d==null?'まだ 一度も していません。機種変更や ブラウザのデータ削除に そなえて 保存しましょう':d===0?'今日 保存しました':`${d}日前に 保存しました`)+
+    (est&&est.quota?row(null,'つかっている 容量',`${(est.usage/1024/1024).toFixed(1)}MB / ${(est.quota/1024/1024).toFixed(0)}MB`):'');
+}
+async function snapDialog(){
+  let list=[];try{list=await listSnaps();}catch(e){}
+  modal(`<h3>🕒 自動バックアップから もどす</h3>
+  ${list.length?`<p class="note">もどす前の データも 自動で 保存されるので、まちがえても やりなおせます。</p><div class="plist">${list.map(x=>`<button data-act="snapRestore" data-k="${esc(x.k)}"><span class="ico">${x.k.startsWith('pre:')?'🛟':'📦'}</span><div><b>${new Date(x.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit'})} <span class="plv">${esc(x.label||'')}</span></b><small>${summary(x.data)}</small></div></button>`).join('')}</div>`
+    :'<p class="empty">まだ 自動バックアップが ありません</p>'}
+  <div class="acts"><button class="btn" data-act="closeModal">閉じる</button></div>`);
+}
 
 /* ===== helpers ===== */
 let BUSY=false;
@@ -1887,18 +2006,22 @@ const ACT={
   toggle:b=>{const k=b.dataset.k;S.settings[k]=!S.settings[k];save();renderSet();if(k==='auto')toast(S.settings.auto?'バトルはオートで進みます':'バトルでコマンドを選べます');if(k==='vib'&&S.settings.vib)vib(80);if(k==='sound'&&S.settings.sound){SND.init();SND.click();}},
   test:b=>runTest(b.dataset.k),
   closeModal,
-  export:()=>{
-    const blob=new Blob([JSON.stringify(S)],{type:'application/json'}),a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);a.download=`taskmonsters-backup-${dkey()}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  export:()=>exportData(),
+  bkLater:()=>{S.bkSnooze=dkey();save();renderBanner();},
+  snapList:()=>snapDialog(),
+  snapRestore:async b=>{
+    const v=await IDB.get(b.dataset.k);if(!v||!v.data)return toast('読み込めませんでした');
+    if(!confirm(`${new Date(v.at).toLocaleString('ja-JP')} の データに もどしますか?\n(${summary(v.data)})\n\nいまの データも 自動で 保存されます。`))return;
+    await restoreFrom(v.data,'もどす前');closeModal();
   },
   import:()=>$('#importFile').click(),
-  resetAll:()=>{if(confirm('すべてのデータ(タスク・記録・仲間・もちもの)を消去します。よろしいですか?')&&confirm('本当に消去しますか?元に戻せません。')){S=fresh();save();renderAll();toast('リセットしました');}},
+  resetAll:async()=>{if(confirm('すべてのデータ(タスク・記録・仲間・もちもの)を消去します。よろしいですか?')&&confirm('本当に消去しますか?\n(消す前の データは「自動バックアップから もどす」で もどせます)')){await snapNow('全消去の前');S=fresh();S.since=Date.now();save();renderAll();toast('リセットしました');}},
 };
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;const f=ACT[b.dataset.act];if(f)f(b,e);});
 $('#importFile').addEventListener('change',async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;
   try{const s=JSON.parse(await f.text());if(!s||s.v!==1||typeof s.mons!=='object')throw 0;
-    if(confirm('バックアップを読み込みます。今のデータは上書きされます。よろしいですか?')){localStorage.setItem(KEY,JSON.stringify(s));S=load();checkDay();renderAll();toast('読み込みました');}}
+    if(confirm(`バックアップを読み込みます。\n(${summary(s)})\n\nいまの データは 自動バックアップに のこります。よろしいですか?`)){await restoreFrom(s,'ファイル復元の前');checkDay();}}
   catch(_){toast('読み込めないファイルです');}
 });
 
@@ -1907,6 +2030,7 @@ function onResume(){if(checkDay())renderAll();}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)onResume();});
 setInterval(()=>{if(!BUSY&&checkDay())renderAll();},30000);
 renderAll();
+protectInit();
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script>
 </body>
