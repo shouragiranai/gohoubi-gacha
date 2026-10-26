@@ -388,6 +388,11 @@ h2{font-size:18px;margin:4px 0 12px}
 .eqmini{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;color:var(--sub);margin-top:4px}
 .stats{grid-template-columns:repeat(4,1fr)}
 .stats b{font-size:18px}
+.rbadge{display:block;font-size:11px;color:#9fe9ff;font-weight:700;margin-top:3px}
+.wkpick{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wkpick button{min-height:50px;border-radius:12px;background:rgba(0,0,0,.25);border:2px solid var(--line);font-weight:900;font-size:16px}
+.wkpick button.sun{color:#ff8fa0}.wkpick button.sat{color:#8fc8ff}
+.wkpick button.on{background:linear-gradient(135deg,#ff4fa3,#ff8a3d);border-color:transparent;color:#fff}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -405,6 +410,7 @@ h2{font-size:18px;margin:4px 0 12px}
       <div class="ttl">今日のタスク <span class="sub" id="prog"></span></div>
       <div id="tpToday"></div>
       <div id="allDone"></div>
+      <button class="btn ghost" style="margin-top:12px" data-act="rtNew">🔁 毎日・毎週の タスクを せってい</button>
     </div>
     <div class="card">
       <div class="ttl">パーティ <span class="sub">💰 <b id="goldNum">0</b> G</span></div>
@@ -434,6 +440,7 @@ h2{font-size:18px;margin:4px 0 12px}
       <div class="legend"><span style="--c:rgba(120,100,255,.45)">よてい</span><span style="--c:linear-gradient(135deg,#1a7f6b,#1f5d8a)">1つ以上</span><span style="--c:linear-gradient(135deg,#ffd23f,#ff8a3d)">ぜんぶ達成</span></div>
     </div>
     <div class="card"><div class="ttl"><span id="calDay"></span><span class="sub" id="calProg"></span></div><div id="tpCal"></div></div>
+    <div class="card"><div class="ttl">🔁 くりかえしタスク</div><div class="shoplist" id="rtList"></div><button class="btn ghost" style="margin-top:10px" data-act="rtNew">+ くりかえしタスクを 追加</button></div>
     <div class="card"><div class="ttl">これまでの記録</div><div class="stats" id="stats"></div></div>
   </section>
 
@@ -540,7 +547,7 @@ const PAL=[['#3fa9ff','#8fd3ff','#ffffff','#2b6bff','#7ef0ff'],['#ffc83d','#ffe2
 /* ===== state ===== */
 const KEY='rewardGacha.v1';
 const fresh=()=>({v:1,tasks:{},bonus:{},hist:{},mlog:{},mons:{},party:[null,null,null,null],
-  settings:{sound:true,vib:true,auto:false},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv'});
+  settings:{sound:true,vib:true,auto:false},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{}});
 function load(){
   try{
     const s=JSON.parse(localStorage.getItem(KEY));
@@ -562,10 +569,34 @@ const WD='日月火水木金土';
 const fmtDay=k=>{const d=k2d(k);return `${d.getMonth()+1}/${d.getDate()}(${WD[d.getDay()]})`;};
 const addDays=(k,n)=>{const d=k2d(k);d.setDate(d.getDate()+n);return dkey(d);};
 const tasksOf=k=>S.tasks[k]||[];
+/* ===== くりかえしタスク ===== */
+// S.routines=[{id,text,days:[曜日0-6],start:'YYYY-MM-DD'}]。該当日になると自動でその日のタスクに入る
+// S.rskip[日付]=[その日だけ消したくりかえしのid]
+const rMatch=(r,k)=>k>=r.start&&r.days.includes(k2d(k).getDay())&&!(S.rskip[k]||[]).includes(r.id);
+function daysLabel(d){
+  const a=[...d].sort();
+  if(a.length===7)return '毎日';
+  if(a.join()==='1,2,3,4,5')return '平日';
+  if(a.join()==='0,6')return '土日';
+  return '毎週 '+a.map(x=>WD[x]).join('・');
+}
+// 表示用:保存ずみのタスク+まだ保存していない先の日のくりかえし(過去にはさかのぼらない)
+function tasksFor(k){
+  const T=tasksOf(k);if(k<dkey())return T;
+  const have=new Set(T.map(t=>t.rid).filter(Boolean));
+  return [...T,...S.routines.filter(r=>rMatch(r,k)&&!have.has(r.id)).map(r=>({id:'r:'+r.id,text:r.text,done:false,rid:r.id}))];
+}
+// その日のくりかえしを実際のタスクとして保存する(今日になったとき・その日だけ編集するとき)
+function materialize(k){
+  const T=S.tasks[k]=S.tasks[k]||[],have=new Set(T.map(t=>t.rid));let n=0;
+  S.routines.forEach(r=>{if(rMatch(r,k)&&!have.has(r.id)){T.push({id:uid(),text:r.text,done:false,rid:r.id});n++;}});
+  if(!T.length)delete S.tasks[k];
+  return n;
+}
 // その日のタスク達成状況(旧バージョンの記録 S.hist もふくめる)
 function dayInfo(k){
-  const T=S.tasks[k];
-  if(T&&T.length){const d=T.filter(t=>t.done).length;return {done:d,total:T.length};}
+  const T=tasksFor(k);
+  if(T.length){const d=T.filter(t=>t.done).length;return {done:d,total:T.length};}
   const h=S.hist[k];return h?{done:h.done||0,total:h.total||0}:{done:0,total:0};
 }
 const achieved=k=>dayInfo(k).done>0;
@@ -888,19 +919,21 @@ const now0=new Date();let calY=now0.getFullYear(),calM=now0.getMonth();
 function renderAll(){renderHome();if(VIEW==='zukan')renderZukan();if(VIEW==='cal')renderCal();if(VIEW==='bag')renderBag();if(VIEW==='set')renderSet();if(VIEW==='shop')renderShop();}
 // 日付ごとのタスク一覧+追加欄(ホームの今日・明日、カレンダーで共通)
 function taskPanel(key,pid){
-  const tk=dkey(),T=tasksOf(key),past=key<tk,today=key===tk,future=key>tk;
+  const tk=dkey(),T=tasksFor(key),past=key<tk,today=key===tk,future=key>tk;
+  const rb=t=>{const r=t.rid&&S.routines.find(x=>x.id===t.rid);return r?`<span class="rbadge">🔁 ${daysLabel(r.days)}</span>`:'';};
   const old=!T.length&&S.hist[key]&&S.hist[key].tasks?S.hist[key].tasks:null;
   let h;
   if(old)h=old.map(t=>`<li class="task${t.done?' done':''}"><div class="tx">${esc(t.text)}</div>${t.done?'<span class="chk">✓</span>':''}</li>`).join('');
   else h=T.map(t=>t.done
-    ?`<li class="task done"><div class="tx">${esc(t.text)}</div><span class="chk">✓</span></li>`
-    :`<li class="task"><button class="tx tedit" data-act="editTask" data-k="${key}" data-id="${t.id}">${esc(t.text)}</button><button class="tdel" data-act="delTask" data-k="${key}" data-id="${t.id}" aria-label="削除">✕</button>${
+    ?`<li class="task done"><div class="tx">${esc(t.text)}${rb(t)}</div><span class="chk">✓</span></li>`
+    :`<li class="task"><button class="tx tedit" data-act="editTask" data-k="${key}" data-id="${t.id}">${esc(t.text)}${rb(t)}</button><button class="tdel" data-act="delTask" data-k="${key}" data-id="${t.id}" aria-label="削除">✕</button>${
       today?`<button class="bdone" data-act="done" data-id="${t.id}">完了!</button>`:past?`<button class="btn sm" data-act="moveToday" data-k="${key}" data-id="${t.id}">今日へ</button>`:''}</li>`).join('');
   if(!h)h=`<li class="emptyslot">${today?'今日やることを追加しよう!<br>おわるたびに モンスターが あらわれるよ':future?'まだ よていは ありません':'この日の きろくは ありません'}</li>`;
   const add=past?'':`<div class="addrow"><input class="tin" id="tin-${pid}" type="text" maxlength="60" placeholder="${today?'今日やること':'よていを 追加'}" enterkeyhint="done" autocomplete="off"><button class="btn primary" data-act="addTask" data-k="${key}" data-in="tin-${pid}">追加</button></div>`;
   return `<ul class="tasks">${h}</ul>${add}`;
 }
 function renderHome(){
+  if(materialize(dkey()))save();
   const st=streak(),tk=dkey(),tm=addDays(tk,1),d=new Date();
   $('#today').textContent=`${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
   $('#streakNum').textContent=st;$('#goldNum').textContent=S.gold.toLocaleString();$('#bestNum').textContent=Math.max(bestStreak(),st);
@@ -949,6 +982,7 @@ function renderCal(){
   const I=dayInfo(CALSEL),mons=monsOf(CALSEL);
   $('#calDay').textContent=fmtDay(CALSEL)+(CALSEL===tk?' ・ 今日':CALSEL===addDays(tk,1)?' ・ 明日':'');
   $('#calProg').textContent=I.total?(CALSEL>tk?`${I.total}件の よてい`:`${I.done} / ${I.total} 完了`):'';
+  $('#rtList').innerHTML=S.routines.length?S.routines.map(r=>`<button class="shopit bagit" data-act="rtEdit" data-id="${r.id}"><div class="si"><b>🔁 ${esc(r.text)}</b><small>${daysLabel(r.days)}</small></div><span class="chev">›</span></button>`).join(''):'<p class="empty">まだ ありません。<br>毎日や 毎週◯曜日に やることを 登録すると、自動で タスクに はいります。</p>';
   $('#tpCal').innerHTML=taskPanel(CALSEL,'cal')+(mons.length?`<p class="note">なかまに なった: ${mons.map(esc).join('、')}</p>`:'');
   const ks=allDays(),past=ks.filter(k=>k<=tk);
   const days1=past.filter(achieved).length,daysAll=past.filter(k=>{const x=dayInfo(k);return x.total&&x.done===x.total;}).length;
@@ -1676,8 +1710,51 @@ document.addEventListener('keydown',e=>{
   const t=e.target;if(!t.classList||!t.classList.contains('tin')||e.key!=='Enter'||e.isComposing)return;
   e.preventDefault();const b=t.parentElement.querySelector('[data-act=addTask]');if(b)addTask(b);
 });
-function findTask(b){const T=tasksOf(b.dataset.k);return {T,t:T.find(x=>x.id===b.dataset.id)};}
-function dropTask(k,t){S.tasks[k]=tasksOf(k).filter(x=>x!==t);if(!S.tasks[k].length)delete S.tasks[k];}
+function findTask(b){
+  const k=b.dataset.k,id=b.dataset.id;
+  if(id.startsWith('r:')){materialize(k);const T=tasksOf(k);return {T,t:T.find(x=>x.rid===id.slice(2))};}
+  const T=tasksOf(k);return {T,t:T.find(x=>x.id===id)};
+}
+function dropTask(k,t){
+  // くりかえしの1回分を消したときは、その日だけ出ないように記録する
+  if(t.rid)(S.rskip[k]=S.rskip[k]||[]).push(t.rid);
+  S.tasks[k]=tasksOf(k).filter(x=>x!==t);if(!S.tasks[k].length)delete S.tasks[k];
+}
+/* くりかえしタスクの設定画面 */
+let RT=null;
+function routineForm(r){
+  RT={id:r?r.id:null,days:new Set(r?r.days:[0,1,2,3,4,5,6])};
+  modal(`<h3>🔁 くりかえしタスク</h3>
+  <label>なまえ<input type="text" id="rtText" maxlength="60" value="${r?esc(r.text):''}" placeholder="例:英単語 30こ"></label>
+  <div class="edsec">くりかえす ひ</div>
+  <div class="chips" style="margin-bottom:8px"><button data-act="rtPreset" data-p="all">毎日</button><button data-act="rtPreset" data-p="wd">平日</button><button data-act="rtPreset" data-p="we">土日</button></div>
+  <div class="wkpick" id="rtDays"></div>
+  <p class="note" id="rtNote"></p>
+  <div class="acts">${r?'<button class="btn danger" data-act="rtDel">削除</button>':''}<button class="btn" data-act="closeModal">キャンセル</button><button class="btn primary" data-act="rtSave">保存</button></div>`);
+  renderRtDays();
+}
+function renderRtDays(){
+  $('#rtDays').innerHTML=[...WD].map((w,i)=>`<button data-act="rtDay" data-d="${i}" class="${RT.days.has(i)?'on':''}${i===0?' sun':i===6?' sat':''}">${w}</button>`).join('');
+  $('#rtNote').textContent=RT.days.size?`${daysLabel([...RT.days])}、自動で その日の タスクに はいります`:'曜日を 1つ以上 えらんでね';
+}
+function saveRoutine(){
+  const text=$('#rtText').value.trim();if(!text)return toast('なまえを 入れてね');
+  if(!RT.days.size)return toast('曜日を えらんでね');
+  const days=[...RT.days].sort(),tk=dkey();
+  let r=S.routines.find(x=>x.id===RT.id);
+  if(r){Object.assign(r,{text,days});}
+  else{r={id:uid(),text,days,start:tk};S.routines.push(r);}
+  // 今日の未完了分にも反映(曜日が外れたら今日の分を消す)
+  const T=tasksOf(tk),t=T.find(x=>x.rid===r.id&&!x.done);
+  if(t){if(days.includes(new Date().getDay()))t.text=text;else{S.tasks[tk]=T.filter(x=>x!==t);if(!S.tasks[tk].length)delete S.tasks[tk];}}
+  save();closeModal();renderAll();toast('くりかえしタスクを 保存しました');
+}
+function deleteRoutine(){
+  const r=S.routines.find(x=>x.id===RT.id);if(!r||!confirm(`「${r.text}」の くりかえしを やめますか?\n(これまでの きろくは のこります)`))return;
+  S.routines=S.routines.filter(x=>x!==r);
+  const tk=dkey(),T=tasksOf(tk);S.tasks[tk]=T.filter(x=>!(x.rid===r.id&&!x.done));if(!S.tasks[tk].length)delete S.tasks[tk];
+  save();closeModal();renderAll();toast('くりかえしを やめました');
+}
 
 function partyPicker(slot){
   const items=[];MONSTERS.forEach(m=>owned(m.no).forEach((nm,i)=>items.push({m,nm,i})));
@@ -1744,6 +1821,12 @@ function renderEd(){
 const ACT={
   tab:b=>showView(b.dataset.v),
   addTask,
+  rtNew:()=>routineForm(null),
+  rtEdit:b=>routineForm(S.routines.find(r=>r.id===b.dataset.id)),
+  rtDay:b=>{const d=+b.dataset.d;if(RT.days.has(d))RT.days.delete(d);else RT.days.add(d);renderRtDays();},
+  rtPreset:b=>{RT.days=new Set({all:[0,1,2,3,4,5,6],wd:[1,2,3,4,5],we:[0,6]}[b.dataset.p]);renderRtDays();},
+  rtSave:saveRoutine,
+  rtDel:deleteRoutine,
   done:b=>completeTask(b.dataset.id),
   delTask:b=>{const {t}=findTask(b);if(t&&confirm(`「${t.text}」を削除しますか?`)){dropTask(b.dataset.k,t);save();renderAll();}},
   editTask:b=>{const {t}=findTask(b);if(!t)return;const v=prompt('タスクを へんしゅう',t.text);if(v&&v.trim()){t.text=v.trim().slice(0,60);save();renderAll();}},
