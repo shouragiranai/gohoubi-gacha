@@ -1,7 +1,7 @@
 {
-  "name": "ごほうびガチャ",
-  "short_name": "ごほうびガチャ",
-  "description": "タスクを終えるたびにご褒美ガチャが引ける習慣化アプリ",
+  "name": "タスク モンスターズ",
+  "short_name": "タスクモンスターズ",
+  "description": "タスクを終えるたびにモンスターが現れる習慣化アプリ",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

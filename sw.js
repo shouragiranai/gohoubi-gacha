@@ -1,5 +1,5 @@
 // オフライン用キャッシュ。index.html を更新したら VERSION を上げると確実に反映されます。
-const VERSION = 'gacha-v3';
+const VERSION = 'gacha-v4';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
