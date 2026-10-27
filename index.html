@@ -418,6 +418,18 @@ h2{font-size:18px;margin:4px 0 12px}
 .duechips button{min-height:38px;font-size:13px}
 .cd .duemk{position:absolute;top:2px;right:3px;font-size:9px;font-weight:900;color:#fff;background:#e0364a;border-radius:6px;padding:0 3px;line-height:1.4}
 .lgdue{color:#ff8a8a;font-weight:800}.lgdue::before{display:none!important}
+.task.timed{flex-wrap:wrap}
+.task.timed .tedit{flex:1 1 0}
+.task.timed.running{border-color:#3fa9ff;box-shadow:0 0 0 1px #3fa9ff,0 0 18px rgba(63,169,255,.35)}
+.task.part{border-color:rgba(159,233,255,.45)}
+.tprog{flex:1 1 100%;display:flex;flex-direction:column;gap:4px}
+.tbar{height:10px;border-radius:9px;background:rgba(255,255,255,.1);overflow:hidden}
+.tbar i{display:block;height:100%;background:linear-gradient(90deg,#3fa9ff,#6bff9a);transition:width .8s linear}
+.tval{font-size:12px;font-weight:700;color:#9fe9ff;font-variant-numeric:tabular-nums}
+.tbtns{flex:1 1 100%;display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr;gap:6px}
+.tbtns .btn{min-height:48px;padding:0 4px;font-size:13px}
+.tbtns .btn.on{background:#1f5d8a;border-color:#3fa9ff}
+.tbtns .bdone{min-width:0;min-height:48px;font-size:15px}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -635,17 +647,17 @@ function tasksFor(k){
 // その日のくりかえしを実際のタスクとして保存する(今日になったとき・その日だけ編集するとき)
 function materialize(k){
   const T=S.tasks[k]=S.tasks[k]||[],have=new Set(T.map(t=>t.rid));let n=0;
-  S.routines.forEach(r=>{if(rMatch(r,k)&&!have.has(r.id)){T.push({id:uid(),text:r.text,done:false,rid:r.id});n++;}});
+  S.routines.forEach(r=>{if(rMatch(r,k)&&!have.has(r.id)){T.push({id:uid(),text:r.text,done:false,rid:r.id,...(parseMin(r.text)?{min:parseMin(r.text)}:{})});n++;}});
   if(!T.length)delete S.tasks[k];
   return n;
 }
 // その日のタスク達成状況(旧バージョンの記録 S.hist もふくめる)
 function dayInfo(k){
   const T=tasksFor(k);
-  if(T.length){const d=T.filter(t=>t.done).length;return {done:d,total:T.length};}
+  if(T.length){const d=T.filter(t=>t.done).length;return {done:d,total:T.length,part:T.filter(t=>!t.done&&t.part).length};}
   const h=S.hist[k];return h?{done:h.done||0,total:h.total||0}:{done:0,total:0};
 }
-const achieved=k=>dayInfo(k).done>0;
+const achieved=k=>{const i=dayInfo(k);return i.done>0||i.part>0;};
 const allDays=()=>[...new Set([...Object.keys(S.tasks),...Object.keys(S.hist)])];
 function streak(){
   const d=new Date();let n=0;
@@ -968,11 +980,13 @@ function taskPanel(key,pid){
   const tk=dkey(),T=tasksFor(key),past=key<tk,today=key===tk,future=key>tk;
   const rb=t=>{const r=t.rid&&S.routines.find(x=>x.id===t.rid),td=t.tid&&S.todos.find(x=>x.id===t.tid);return r?`<span class="rbadge">🔁 ${daysLabel(r.days)}</span>`:td?`<span class="rbadge">📌 ${td.done?'しめきり・やることリスト':td.due?dueInfo(td.due).t:'やることリスト'}</span>`:'';};
   const old=!T.length&&S.hist[key]&&S.hist[key].tasks?S.hist[key].tasks:null;
+  const tb=t=>t.min?`<span class="rbadge">⏱ ${t.done?fmtMin(t.min):`目標 ${fmtMin(t.min)}`}${t.part&&!t.done?` ・ とちゅうまで ${fmtMin(t.paid||0)}`:''}</span>`:'';
   let h;
   if(old)h=old.map(t=>`<li class="task${t.done?' done':''}"><div class="tx">${esc(t.text)}</div>${t.done?'<span class="chk">✓</span>':''}</li>`).join('');
   else h=T.map(t=>t.done
-    ?`<li class="task done"><div class="tx">${esc(t.text)}${rb(t)}</div><span class="chk">✓</span></li>`
-    :`<li class="task"><button class="tx tedit" data-act="editTask" data-k="${key}" data-id="${t.id}">${esc(t.text)}${rb(t)}</button><button class="tdel" data-act="delTask" data-k="${key}" data-id="${t.id}" aria-label="削除">✕</button>${
+    ?`<li class="task done"><div class="tx">${esc(t.text)}${rb(t)}${tb(t)}</div><span class="chk">✓</span></li>`
+    :today&&t.min?timedRow(key,t,rb(t)+tb(t))
+    :`<li class="task${t.part?' part':''}"><button class="tx tedit" data-act="editTask" data-k="${key}" data-id="${t.id}">${esc(t.text)}${rb(t)}${tb(t)}</button><button class="tdel" data-act="delTask" data-k="${key}" data-id="${t.id}" aria-label="削除">✕</button>${
       today?`<button class="bdone" data-act="done" data-id="${t.id}">完了!</button>`:past?`<button class="btn sm" data-act="moveToday" data-k="${key}" data-id="${t.id}">今日へ</button>`:''}</li>`).join('');
   if(!h)h=`<li class="emptyslot">${today?'今日やることを追加しよう!<br>おわるたびに モンスターが あらわれるよ':future?'まだ よていは ありません':'この日の きろくは ありません'}</li>`;
   const add=past?'':`<div class="addrow"><input class="tin" id="tin-${pid}" type="text" maxlength="60" placeholder="${today?'今日やること':'よていを 追加'}" enterkeyhint="done" autocomplete="off"><button class="btn primary" data-act="addTask" data-k="${key}" data-in="tin-${pid}">追加</button></div>`;
@@ -1222,7 +1236,8 @@ function gainExp(n,test){
 }
 async function showMsgs(msgs){
   for(const x of msgs){
-    if(x.k==='all'){SND.fanfare(1);vib([100,60,100,60,300]);FX.confetti(220,PAL[1],{rain:true});FX.sparks(80,PAL[1],{y:FX.H*.3});}
+    if(x.k==='gold'){SND.coin();FX.sparks(40,['#ffd23f','#fff2a8','#ffffff'],{y:FX.H*.3});}
+    else if(x.k==='all'){SND.fanfare(1);vib([100,60,100,60,300]);FX.confetti(220,PAL[1],{rain:true});FX.sparks(80,PAL[1],{y:FX.H*.3});}
     else if(x.k==='lv'){SND.lvup();vib([40,30,80]);FX.sparks(40,PAL[1],{y:FX.H*.3});}
     else if(x.k==='learn'){SND.cast();FX.sparks(30,['#9fe9ff','#ffffff'],{y:FX.H*.3});}
     await say(x.t);
@@ -1885,14 +1900,123 @@ async function completeTodo(id){
   await completeTask(t.id);
 }
 
+/* ===== 時間で きろくする タスク =====
+   t.min=目標(分) t.prog=やった時間(分) t.paid=報酬を うけとりずみの時間(分) t.part=途中で おえた
+   S.run={k,id,start} 動いているタイマー(アプリを閉じても つづく) */
+const MIN_PER_EXP=4,MIN_PER_G=2; // 4分ごとに1EXP、2分ごとに1G
+const timeReward=m=>({exp:Math.max(1,Math.round(m/MIN_PER_EXP)),g:Math.max(1,Math.round(m/MIN_PER_G))});
+function parseMin(s){
+  s=String(s).replace(/[０-９．]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+  let m,t=0;
+  if((m=s.match(/(\d+(?:\.\d+)?)\s*時間(半)?/)))t+=Math.round(parseFloat(m[1])*60)+(m[2]?30:0);
+  if((m=s.match(/(\d+)\s*分/)))t+=+m[1];
+  return t>0&&t<=1440?t:null;
+}
+const fmtMin=m=>{m=Math.round(m);return m>=60?`${Math.floor(m/60)}時間${m%60?m%60+'分':''}`:`${m}分`;};
+const runEl=t=>S.run&&S.run.id===t.id?(Date.now()-S.run.start)/60000:0;
+const progOf=t=>(t.prog||0)+runEl(t);
+function findById(id){for(const k in S.tasks){const t=S.tasks[k].find(x=>x.id===id);if(t)return {k,t};}return {};}
+function progText(t){
+  const p=progOf(t),s=S.run&&S.run.id===t.id?Math.floor((Date.now()-S.run.start)/1000):0;
+  return `${Math.floor(p)}分 / ${t.min}分${s?` ・ ⏱ ${Math.floor(s/60)}:${pad(s%60)} けいそくちゅう`:''}${t.paid?` ・ ${Math.floor(t.paid)}分ぶん うけとりずみ`:''}`;
+}
+// タイマーを止めて、計った時間を足す
+function stopTimer(ask=true){
+  const r=S.run;if(!r)return;
+  const {t}=findById(r.id);S.run=null;
+  if(t){t.prog=(t.prog||0)+(Date.now()-r.start)/60000;}
+  save();renderAll();
+  if(t&&ask&&!t.done&&t.prog>=t.min&&r.k===dkey())reachedDialog(t);
+}
+function startTimer(id){
+  if(S.run)stopTimer(false);
+  S.run={k:dkey(),id,start:Date.now()};save();renderAll();SND.click();toast('⏱ スタート! アプリを とじても けいそくは つづきます');
+}
+function reachedDialog(t){
+  modal(`<h3>🎯 目標の ${fmtMin(t.min)} たっせい!</h3><p>「${esc(t.text)}」を 完了にして モンスターと たたかいますか?</p><div class="acts"><button class="btn" data-act="closeModal">まだ つづける</button><button class="btn primary" data-act="tmDone" data-id="${t.id}">完了にする!</button></div>`);
+}
+// 1秒ごとに 計測中の表示だけ 更新(入力中の文字を消さないよう 全体は描きなおさない)
+setInterval(()=>{
+  if(!S.run)return;
+  const {t}=findById(S.run.id);if(!t){S.run=null;return;}
+  document.querySelectorAll(`[data-tv="${t.id}"]`).forEach(e=>e.textContent=progText(t));
+  document.querySelectorAll(`[data-tb="${t.id}"]`).forEach(e=>e.style.width=Math.min(100,progOf(t)/t.min*100)+'%');
+  if(!S.run.hit&&progOf(t)>=t.min){S.run.hit=1;save();SND.init();SND.lvup();vib([200,100,200]);toast(`🎯 目標の ${fmtMin(t.min)}に とうたつ!`);}
+},1000);
+function timedRow(key,t,badge){
+  const run=S.run&&S.run.id===t.id,pct=Math.min(100,progOf(t)/t.min*100);
+  return `<li class="task timed${t.part?' part':''}${run?' running':''}">
+    <button class="tx tedit" data-act="editTask" data-k="${key}" data-id="${t.id}">${esc(t.text)}${badge}</button>
+    <button class="tdel" data-act="delTask" data-k="${key}" data-id="${t.id}" aria-label="削除">✕</button>
+    <div class="tprog"><div class="tbar"><i data-tb="${t.id}" style="width:${pct}%"></i></div><span class="tval" data-tv="${t.id}">${progText(t)}</span></div>
+    <div class="tbtns">
+      <button class="btn sm${run?' on':''}" data-act="tmToggle" data-id="${t.id}">${run?'⏸ ストップ':'▶ スタート'}</button>
+      <button class="btn sm" data-act="tmRec" data-id="${t.id}">＋きろく</button>
+      <button class="btn sm" data-act="tmPart" data-id="${t.id}">ここまで</button>
+      <button class="bdone" data-act="done" data-id="${t.id}">完了!</button>
+    </div></li>`;
+}
+function recDialog(t){
+  modal(`<h3>⏱ やった時間を きろく</h3><p class="note">「${esc(t.text)}」いま ${Math.floor(progOf(t))}分 / ${t.min}分</p>
+  <label>たす 時間(分)<input type="number" id="recMin" inputmode="numeric" min="1" max="1440" placeholder="例:30"></label>
+  <div class="chips" style="margin-bottom:8px">${[10,15,30,45,60,90].map(n=>`<button data-act="recQuick" data-n="${n}">+${n}分</button>`).join('')}</div>
+  <div class="acts"><button class="btn" data-act="closeModal">キャンセル</button><button class="btn primary" data-act="recSave" data-id="${t.id}">きろくする</button></div>`);
+}
+// 途中で おえる:やった時間ぶんの EXP と G(モンスターは でない)
+async function claimPartial(id){
+  const {k,t}=findById(id);if(BUSY||!t||t.done)return;
+  if(S.run&&S.run.id===id)stopTimer(false);
+  const prog=Math.floor(t.prog||0),pay=prog-Math.floor(t.paid||0);
+  if(pay<=0)return toast('まだ きろくが ありません。タイマーか「＋きろく」で 時間を 入れてね');
+  const R=timeReward(pay);
+  if(!confirm(`${prog}分 / ${t.min}分 で いったん おわりにしますか?\n${pay}分ぶんの ${R.exp}EXP と ${R.g}G を もらえます(モンスターは でません)。\nあとで つづきを やって 完了することも できます。`))return;
+  BUSY=true;
+  try{
+    t.paid=prog;t.part=true;S.gold+=R.g;
+    const msgs=[{t:`「${t.text}」\n${fmtMin(prog)} がんばった!`,k:'learn'},...gainExp(R.exp),{t:`${R.g}ゴールドを てにいれた!`,k:'gold'}];
+    save();renderAll();
+    await rewardOverlay(msgs);
+  }finally{BUSY=false;renderAll();}
+}
+async function rewardOverlay(msgs){
+  const ov=$('#mon'),ico=$('#monIco');
+  ico.className='mon-ico';ico.innerHTML='';$('#monBadge').innerHTML='';$('#dqtxt').textContent='';
+  ov.hidden=false;FX.attach($('#monc'));FX.cy=FX.H*.27;FX.start();await nextFrame();ov.classList.add('show');
+  await showMsgs(msgs);await closeMon();
+}
+let ETK=null;
+function taskForm(k,t){
+  ETK={k,id:t.id};
+  modal(`<h3>タスクの へんしゅう</h3>
+  <label>なまえ<input type="text" id="tkText" maxlength="60" value="${esc(t.text)}"></label>
+  <label>目標時間(分)※時間で きろくする タスクだけ<input type="number" id="tkMin" inputmode="numeric" min="1" max="1440" value="${t.min||''}" placeholder="空らんなら 時間なし"></label>
+  <div class="chips" style="margin-bottom:8px">${[[30,'30分'],[60,'1時間'],[90,'1時間半'],[120,'2時間'],[180,'3時間'],['','なし']].map(([n,l])=>`<button data-act="tkQuick" data-n="${n}">${l}</button>`).join('')}</div>
+  ${t.min?`<label>やった時間(分)<input type="number" id="tkProg" inputmode="numeric" min="0" max="1440" value="${Math.floor(t.prog||0)}"></label>`:''}
+  <p class="note">名前に「2時間」「30分」と 書くと、自動で 目標時間に なります。時間つきの タスクは、とちゅうで おわっても やった時間ぶんの EXPと Gが もらえます。</p>
+  <div class="acts"><button class="btn" data-act="closeModal">キャンセル</button><button class="btn primary" data-act="tkSave">保存</button></div>`);
+}
+function saveTaskForm(){
+  const T=tasksOf(ETK.k),t=T.find(x=>x.id===ETK.id);if(!t)return closeModal();
+  const text=$('#tkText').value.trim();if(!text)return toast('なまえを 入れてね');
+  const mv=parseInt($('#tkMin').value,10);t.text=text.slice(0,60);t.min=mv>0?Math.min(1440,mv):null;
+  if(!t.min){delete t.min;delete t.prog;delete t.paid;delete t.part;if(S.run&&S.run.id===t.id)S.run=null;}
+  else if($('#tkProg')){const p=parseInt($('#tkProg').value,10);if(p>=0){if(S.run&&S.run.id===t.id)S.run.start=Date.now();t.prog=p;}}
+  save();closeModal();renderAll();
+}
+
 /* ===== main flows ===== */
 // タスク完了 → EXP → モンスター出現(バトル)
 async function completeTask(id){
   const tk=dkey(),T=tasksOf(tk),t=T.find(x=>x.id===id);if(BUSY||!t||t.done)return;
   BUSY=true;SND.init();
   try{
+    if(S.run&&S.run.id===t.id){t.prog=(t.prog||0)+(Date.now()-S.run.start)/60000;S.run=null;}
     t.done=true;t.at=Date.now();
-    const ex=gainExp(EXP_TASK);
+    let tr=null;
+    if(t.min){const pay=Math.max(0,t.min-Math.floor(t.paid||0));t.prog=Math.max(t.prog||0,t.min);t.paid=t.min;if(pay>0){tr=timeReward(pay);S.gold+=tr.g;}}
+    const ex=gainExp(EXP_TASK+(tr?tr.exp:0));
+    if(tr)ex.unshift({t:`「${t.text}」
+${fmtMin(t.min)} やりきった!`,k:'learn'}),ex.push({t:`${tr.g}ゴールドを てにいれた!`,k:'gold'});
     // 「しめきり・やること」から来たタスクなら、そちらも完了にする
     const td=t.tid&&S.todos.find(x=>x.id===t.tid);
     if(td&&!td.done){
@@ -1917,7 +2041,7 @@ async function runTest(k){
 }
 function addTask(b){
   const inp=$('#'+b.dataset.in),k=b.dataset.k,v=inp.value.trim();if(!v)return inp.focus();
-  (S.tasks[k]=S.tasks[k]||[]).push({id:uid(),text:v,done:false});save();renderAll();
+  (S.tasks[k]=S.tasks[k]||[]).push({id:uid(),text:v,done:false,...(parseMin(v)?{min:parseMin(v)}:{})});save();renderAll();
   const n=$('#'+b.dataset.in);if(n)n.focus();
 }
 document.addEventListener('keydown',e=>{
@@ -2039,7 +2163,7 @@ const ACT={
   dueQuick:b=>{$('#todoDue').value=b.dataset.n===''?'':addDays(dkey(),+b.dataset.n);},
   tdQuick:b=>{$('#tdDue').value=b.dataset.n===''?'':addDays(dkey(),+b.dataset.n);},
   todoDo:b=>completeTodo(b.dataset.id),
-  todoToday:b=>{const td=S.todos.find(x=>x.id===b.dataset.id);if(!td||inTodayList(td.id))return;(S.tasks[dkey()]=S.tasks[dkey()]||[]).push({id:uid(),text:td.text,done:false,tid:td.id});save();renderAll();toast('今日の タスクに 入れました');},
+  todoToday:b=>{const td=S.todos.find(x=>x.id===b.dataset.id);if(!td||inTodayList(td.id))return;(S.tasks[dkey()]=S.tasks[dkey()]||[]).push({id:uid(),text:td.text,done:false,tid:td.id,...(parseMin(td.text)?{min:parseMin(td.text)}:{})});save();renderAll();toast('今日の タスクに 入れました');},
   todoEdit:b=>{const t=S.todos.find(x=>x.id===b.dataset.id);if(t)todoForm(t);},
   todoNewDue:b=>todoForm(null,b.dataset.k),
   todoSave:b=>saveTodo(b.dataset.id),
@@ -2053,8 +2177,16 @@ const ACT={
   rtSave:saveRoutine,
   rtDel:deleteRoutine,
   done:b=>completeTask(b.dataset.id),
-  delTask:b=>{const {t}=findTask(b);if(t&&confirm(`「${t.text}」を削除しますか?`)){dropTask(b.dataset.k,t);save();renderAll();}},
-  editTask:b=>{const {t}=findTask(b);if(!t)return;const v=prompt('タスクを へんしゅう',t.text);if(v&&v.trim()){t.text=v.trim().slice(0,60);save();renderAll();}},
+  delTask:b=>{const {t}=findTask(b);if(t&&confirm(`「${t.text}」を削除しますか?`)){if(S.run&&S.run.id===t.id)S.run=null;dropTask(b.dataset.k,t);save();renderAll();}},
+  editTask:b=>{const {t}=findTask(b);if(t)taskForm(b.dataset.k,t);},
+  tkQuick:b=>{$('#tkMin').value=b.dataset.n;},
+  tkSave:()=>saveTaskForm(),
+  tmToggle:b=>{const id=b.dataset.id;if(S.run&&S.run.id===id)stopTimer();else startTimer(id);},
+  tmRec:b=>{const {t}=findById(b.dataset.id);if(t)recDialog(t);},
+  recQuick:b=>{const i=$('#recMin');i.value=(parseInt(i.value,10)||0)+ +b.dataset.n;},
+  recSave:b=>{const {t}=findById(b.dataset.id),v=parseInt($('#recMin').value,10);if(!t)return closeModal();if(!(v>0))return toast('分数を 入れてね');t.prog=(t.prog||0)+v;save();closeModal();renderAll();toast(`+${v}分 きろくしました`);if(!t.done&&progOf(t)>=t.min)reachedDialog(t);},
+  tmPart:b=>claimPartial(b.dataset.id),
+  tmDone:b=>{closeModal();completeTask(b.dataset.id);},
   moveToday:b=>{const {t}=findTask(b);if(!t)return;dropTask(b.dataset.k,t);(S.tasks[dkey()]=S.tasks[dkey()]||[]).push(t);save();renderAll();toast('今日の タスクに うつしました');},
   bagCat:b=>{BAG.cat=b.dataset.c;renderBag();},
   itemDlg:b=>itemDialog(b.dataset.n),
