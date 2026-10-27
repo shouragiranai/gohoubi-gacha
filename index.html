@@ -1502,8 +1502,8 @@ function mkF(m,lv,name,enemy,mul=1){
 }
 const canUse=(u,s)=>s.kind!=='field'&&s.mp<=u.mp&&!(u.st.silence&&isSpellN(s.name));
 /* --- 複数の敵 ---
-   出現数の確率(1〜4体)と、数が多いときの 1体あたりの HP・攻撃力の倍率 */
-const EN_P=[.45,.30,.17,.08],EN_HP=[0,1,.5,.36,.28],EN_ATK=[0,1,.62,.5,.42];
+   出現数の確率(1〜4体)。何体出ても 1体1体の強さは 単体のときと同じ */
+const EN_P=[.45,.30,.17,.08],EN_HP=[0,1,1,1,1],EN_ATK=[0,1,1,1,1];
 const eEl=e=>document.getElementById('ei'+e.idx);
 function renderB(){
   if(!B)return;
@@ -1909,7 +1909,7 @@ async function runMonster(opt={}){
     focusLast(last);
     document.getElementById('ei'+last).className='mon-ico lie';SND.win();vib([60,40,120]);
     await say(list.length>1?'まものたちを やっつけた!':`${list[0].name}を やっつけた!`);
-    const exp=Math.round(r.enemies.reduce((s,e)=>s+8+e.lv*3,0)*(list.length>1?.7:1));
+    const exp=r.enemies.reduce((s,e)=>s+8+e.lv*3,0);
     await showMsgs(gainExp(exp,opt.test));
     await battleLoot(list[last],opt,list.reduce((s,m)=>s+(m.g||0),0));
   }
