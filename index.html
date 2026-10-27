@@ -399,6 +399,25 @@ h2{font-size:18px;margin:4px 0 12px}
 .bkban{display:flex;flex-direction:column;gap:10px;background:linear-gradient(135deg,#123c66,#2b2f8a);border:1px solid #3d6bd6;border-radius:16px;padding:12px 14px;margin-bottom:14px}
 .bkban b{display:block}.bkban small{display:block;font-size:12px;color:#cfe3ff;margin-top:4px;line-height:1.5}
 .bkbtns{display:flex;gap:8px}.bkbtns .btn{flex:1}
+.task.todo{flex-wrap:wrap}
+.task.todo .tedit{flex:1 1 100%}
+.task.todo .tdy{flex:1;min-height:52px}
+.task.todo .bdone{flex:1;min-height:52px}
+.task.todo.over{border-color:#ff5f6d;background:rgba(255,95,109,.12)}
+.task.todo.today{border-color:#ffb03b;background:rgba(255,176,59,.1)}
+.task.todo.soon{border-color:rgba(255,217,107,.5)}
+.duelb{display:block;font-size:12px;font-weight:700;color:var(--sub);margin-top:3px}
+.over .duelb{color:#ff8a8a}.today .duelb{color:#ffb03b}.soon .duelb{color:#ffd96b}
+.todoadd{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.todoadd>input{min-height:52px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--txt);padding:0 14px;font-size:16px}
+.todorow{display:flex;gap:8px}
+.duepick{flex:1;display:flex;align-items:center;gap:6px;min-height:52px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.3);padding:0 10px}
+.duepick span{color:#ff8a8a;font-weight:900}
+.duepick input,.sheet input[type=date]{flex:1;min-width:0;background:transparent;border:0;color:var(--txt);font-size:16px;color-scheme:dark}
+.sheet input[type=date]{display:block;width:100%;margin-top:6px;min-height:52px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.3);padding:0 14px}
+.duechips button{min-height:38px;font-size:13px}
+.cd .duemk{position:absolute;top:2px;right:3px;font-size:9px;font-weight:900;color:#fff;background:#e0364a;border-radius:6px;padding:0 3px;line-height:1.4}
+.lgdue{color:#ff8a8a;font-weight:800}.lgdue::before{display:none!important}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -418,6 +437,15 @@ h2{font-size:18px;margin:4px 0 12px}
       <div id="tpToday"></div>
       <div id="allDone"></div>
       <button class="btn ghost" style="margin-top:12px" data-act="rtNew">🔁 毎日・毎週の タスクを せってい</button>
+    </div>
+    <div class="card">
+      <div class="ttl">📌 しめきり・やること <span class="sub" id="todoCnt"></span></div>
+      <div id="todoList"></div>
+      <div class="todoadd">
+        <input class="tin" id="tin-todo" type="text" maxlength="80" placeholder="課題・いつか やること" enterkeyhint="done" autocomplete="off">
+        <div class="todorow"><label class="duepick"><span>〆</span><input type="date" id="todoDue"></label><button class="btn primary" data-act="addTodo">追加</button></div>
+        <div class="chips duechips"><button data-act="dueQuick" data-n="0">今日</button><button data-act="dueQuick" data-n="1">明日</button><button data-act="dueQuick" data-n="3">3日後</button><button data-act="dueQuick" data-n="7">1週間後</button><button data-act="dueQuick" data-n="">期限なし</button></div>
+      </div>
     </div>
     <div class="card">
       <div class="ttl">パーティ <span class="sub">💰 <b id="goldNum">0</b> G</span></div>
@@ -444,7 +472,7 @@ h2{font-size:18px;margin:4px 0 12px}
     <div class="card">
       <div class="calh"><button data-act="calPrev">‹</button><b id="calTitle"></b><button data-act="calNext">›</button></div>
       <div class="cgrid" id="cgrid"></div>
-      <div class="legend"><span style="--c:rgba(120,100,255,.45)">よてい</span><span style="--c:linear-gradient(135deg,#1a7f6b,#1f5d8a)">1つ以上</span><span style="--c:linear-gradient(135deg,#ffd23f,#ff8a3d)">ぜんぶ達成</span></div>
+      <div class="legend"><span style="--c:rgba(120,100,255,.45)">よてい</span><span style="--c:linear-gradient(135deg,#1a7f6b,#1f5d8a)">1つ以上</span><span style="--c:linear-gradient(135deg,#ffd23f,#ff8a3d)">ぜんぶ達成</span><span class="lgdue">〆 しめきり</span></div>
     </div>
     <div class="card"><div class="ttl"><span id="calDay"></span><span class="sub" id="calProg"></span></div><div id="tpCal"></div></div>
     <div class="card"><div class="ttl">🔁 くりかえしタスク</div><div class="shoplist" id="rtList"></div><button class="btn ghost" style="margin-top:10px" data-act="rtNew">+ くりかえしタスクを 追加</button></div>
@@ -557,7 +585,7 @@ const PAL=[['#3fa9ff','#8fd3ff','#ffffff','#2b6bff','#7ef0ff'],['#ffc83d','#ffe2
 /* ===== state ===== */
 const KEY='rewardGacha.v1';
 const fresh=()=>({v:1,tasks:{},bonus:{},hist:{},mlog:{},mons:{},party:[null,null,null,null],
-  settings:{sound:true,vib:true,auto:false},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{}});
+  settings:{sound:true,vib:true,auto:false},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{},todos:[]});
 // 古い形式のデータを今の形式にそろえる
 function migrate(s){
   const f=fresh(),o={...f,...s,settings:{...f.settings,...s.settings},stats:{...f.stats,...s.stats}};
@@ -938,7 +966,7 @@ function renderAll(){renderHome();if(VIEW==='zukan')renderZukan();if(VIEW==='cal
 // 日付ごとのタスク一覧+追加欄(ホームの今日・明日、カレンダーで共通)
 function taskPanel(key,pid){
   const tk=dkey(),T=tasksFor(key),past=key<tk,today=key===tk,future=key>tk;
-  const rb=t=>{const r=t.rid&&S.routines.find(x=>x.id===t.rid);return r?`<span class="rbadge">🔁 ${daysLabel(r.days)}</span>`:'';};
+  const rb=t=>{const r=t.rid&&S.routines.find(x=>x.id===t.rid),td=t.tid&&S.todos.find(x=>x.id===t.tid);return r?`<span class="rbadge">🔁 ${daysLabel(r.days)}</span>`:td?`<span class="rbadge">📌 ${td.done?'しめきり・やることリスト':td.due?dueInfo(td.due).t:'やることリスト'}</span>`:'';};
   const old=!T.length&&S.hist[key]&&S.hist[key].tasks?S.hist[key].tasks:null;
   let h;
   if(old)h=old.map(t=>`<li class="task${t.done?' done':''}"><div class="tx">${esc(t.text)}</div>${t.done?'<span class="chk">✓</span>':''}</li>`).join('');
@@ -953,6 +981,7 @@ function taskPanel(key,pid){
 function renderHome(){
   if(materialize(dkey()))save();
   renderBanner();
+  renderTodos();
   const st=streak(),tk=dkey(),tm=addDays(tk,1),d=new Date();
   $('#today').textContent=`${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
   $('#streakNum').textContent=st;$('#goldNum').textContent=S.gold.toLocaleString();$('#bestNum').textContent=Math.max(bestStreak(),st);
@@ -995,14 +1024,18 @@ function renderCal(){
     const k=dkey(new Date(calY,calM,d)),I=dayInfo(k),fut=k>tk;
     const cls=fut?(I.total?'plan':''):I.total&&I.done===I.total?'lv2':I.done?'lv1':'';
     const sub=fut?(I.total?`<i>${I.total}件</i>`:''):I.total?(I.done===I.total?'<i>★</i>':`<i>${I.done}/${I.total}</i>`):'';
-    h+=`<button class="cd ${cls}${k===tk?' today':''}${k===CALSEL?' sel':''}" data-act="day" data-k="${k}">${d}${sub}</button>`;
+    const dn=S.todos.filter(t=>!t.done&&t.due===k).length;
+    h+=`<button class="cd ${cls}${k===tk?' today':''}${k===CALSEL?' sel':''}" data-act="day" data-k="${k}">${d}${sub}${dn?`<span class="duemk">〆${dn>1?dn:''}</span>`:''}</button>`;
   }
   $('#cgrid').innerHTML=h;
   const I=dayInfo(CALSEL),mons=monsOf(CALSEL);
   $('#calDay').textContent=fmtDay(CALSEL)+(CALSEL===tk?' ・ 今日':CALSEL===addDays(tk,1)?' ・ 明日':'');
   $('#calProg').textContent=I.total?(CALSEL>tk?`${I.total}件の よてい`:`${I.done} / ${I.total} 完了`):'';
   $('#rtList').innerHTML=S.routines.length?S.routines.map(r=>`<button class="shopit bagit" data-act="rtEdit" data-id="${r.id}"><div class="si"><b>🔁 ${esc(r.text)}</b><small>${daysLabel(r.days)}</small></div><span class="chev">›</span></button>`).join(''):'<p class="empty">まだ ありません。<br>毎日や 毎週◯曜日に やることを 登録すると、自動で タスクに はいります。</p>';
-  $('#tpCal').innerHTML=taskPanel(CALSEL,'cal')+(mons.length?`<p class="note">なかまに なった: ${mons.map(esc).join('、')}</p>`:'');
+  const dues=S.todos.filter(t=>t.due===CALSEL);
+  $('#tpCal').innerHTML=taskPanel(CALSEL,'cal')
+    +`<div class="edsec">📌 この日が しめきり</div>`+(dues.length?`<ul class="tasks">${dues.map(t=>`<li class="task todo ${t.done?'done':dueInfo(t.due).cls}"><button class="tx tedit" data-act="todoEdit" data-id="${t.id}">${esc(t.text)}<span class="duelb">${t.done?'完了ずみ':dueInfo(t.due).t}</span></button></li>`).join('')}</ul>`:'')
+    +(CALSEL>=tk?`<button class="btn ghost sm" style="margin-top:8px" data-act="todoNewDue" data-k="${CALSEL}">+ この日 しめきりの 課題を 追加</button>`:'')+(mons.length?`<p class="note">なかまに なった: ${mons.map(esc).join('、')}</p>`:'');
   const ks=allDays(),past=ks.filter(k=>k<=tk);
   const days1=past.filter(achieved).length,daysAll=past.filter(k=>{const x=dayInfo(k);return x.total&&x.done===x.total;}).length;
   const done=past.reduce((s,k)=>s+dayInfo(k).done,0),plan=ks.filter(k=>k>tk).reduce((s,k)=>s+dayInfo(k).total,0);
@@ -1796,6 +1829,62 @@ async function runMonster(opt={}){
   return closeMon();
 }
 
+/* ===== しめきり・やること(期限つき/期限なしの課題) =====
+   S.todos=[{id,text,due:'YYYY-MM-DD'|null,done,doneAt,created}]
+   完了すると今日のタスクにも記録され(連続日数・カレンダーに反映)、モンスターが出る */
+const EXP_DEADLINE=10; // しめきり前に おわらせたときのボーナス
+function dueInfo(due){
+  if(!due)return {cls:'nodue',t:'期限なし'};
+  const d=Math.round((k2d(due)-k2d(dkey()))/864e5);
+  if(d<0)return {cls:'over',t:`⚠️ 期限切れ ${-d}日(${fmtDay(due)})`,d};
+  if(d===0)return {cls:'today',t:'🔥 今日まで',d};
+  if(d===1)return {cls:'soon',t:`明日まで(${fmtDay(due)})`,d};
+  return {cls:d<=3?'soon':'later',t:`あと${d}日(${fmtDay(due)}まで)`,d};
+}
+const todoSort=(a,b)=>(a.due||'9999')<(b.due||'9999')?-1:(a.due||'9999')>(b.due||'9999')?1:a.created-b.created;
+const inTodayList=id=>tasksOf(dkey()).some(x=>x.tid===id&&!x.done);
+let TODO_SHOWDONE=false;
+function renderTodos(){
+  const tk=dkey(),open=S.todos.filter(t=>!t.done).sort(todoSort),done=S.todos.filter(t=>t.done).sort((a,b)=>b.doneAt-a.doneAt);
+  const over=open.filter(t=>t.due&&t.due<tk).length;
+  $('#todoCnt').textContent=open.length?`${open.length}件${over?` ・ 期限切れ ${over}`:''}`:'';
+  const rows=open.map(t=>{const I=dueInfo(t.due),it=inTodayList(t.id);
+    return `<li class="task todo ${I.cls}"><button class="tx tedit" data-act="todoEdit" data-id="${t.id}">${esc(t.text)}<span class="duelb">${I.t}${it?' ・ 今日やる よてい':''}</span></button>${it?'':`<button class="btn sm tdy" data-act="todoToday" data-id="${t.id}">今日やる</button>`}<button class="bdone" data-act="todoDo" data-id="${t.id}">完了!</button></li>`;}).join('');
+  $('#todoList').innerHTML=(rows?`<ul class="tasks">${rows}</ul>`:'<p class="empty">しめきりの ある課題や、いつか やることを 入れておこう</p>')
+    +(done.length?`<button class="btn ghost sm" style="margin-top:10px" data-act="todoShowDone">${TODO_SHOWDONE?'▲ 完了ずみを かくす':`▼ 完了ずみ ${done.length}件`}</button>`
+      +(TODO_SHOWDONE?`<ul class="tasks" style="margin-top:8px">${done.slice(0,30).map(t=>`<li class="task done"><div class="tx">${esc(t.text)}<span class="duelb">${fmtDay(dkey(new Date(t.doneAt)))}に 完了</span></div><button class="btn sm" data-act="todoUndo" data-id="${t.id}">もどす</button></li>`).join('')}</ul>`:''):'');
+}
+function addTodo(){
+  const inp=$('#tin-todo'),v=inp.value.trim();if(!v)return inp.focus();
+  const due=$('#todoDue').value||null;
+  S.todos.push({id:uid(),text:v.slice(0,80),due,done:false,created:Date.now()});
+  inp.value='';$('#todoDue').value='';
+  save();renderAll();toast(due?`📌 ${fmtDay(due)}まで の 課題を 追加`:'📌 やることを 追加');
+  const n=$('#tin-todo');if(n)n.focus();
+}
+function todoForm(t,due){
+  modal(`<h3>📌 ${t?'やることの へんしゅう':'しめきりの ある課題を 追加'}</h3>
+  <label>なまえ<input type="text" id="tdText" maxlength="80" value="${t?esc(t.text):''}" placeholder="例:レポート提出"></label>
+  <label>しめきり(なしでもOK)<input type="date" id="tdDue" value="${t?t.due||'':due||''}"></label>
+  <div class="chips" style="margin-bottom:8px">${[[0,'今日'],[1,'明日'],[3,'3日後'],[7,'1週間後'],['','なし']].map(([n,l])=>`<button data-act="tdQuick" data-n="${n}">${l}</button>`).join('')}</div>
+  <div class="acts">${t?`<button class="btn danger" data-act="todoDel" data-id="${t.id}">削除</button>`:''}<button class="btn" data-act="closeModal">キャンセル</button><button class="btn primary" data-act="todoSave" data-id="${t?t.id:''}">保存</button></div>`);
+}
+function saveTodo(id){
+  const text=$('#tdText').value.trim();if(!text)return toast('なまえを 入れてね');
+  const due=$('#tdDue').value||null;
+  let t=S.todos.find(x=>x.id===id);
+  if(t){t.text=text;t.due=due;tasksOf(dkey()).filter(x=>x.tid===t.id&&!x.done).forEach(x=>x.text=text);}
+  else S.todos.push({id:uid(),text,due,done:false,created:Date.now()});
+  save();closeModal();renderAll();
+}
+async function completeTodo(id){
+  const td=S.todos.find(x=>x.id===id);if(BUSY||!td||td.done)return;
+  const T=(S.tasks[dkey()]=S.tasks[dkey()]||[]);
+  let t=T.find(x=>x.tid===id&&!x.done);
+  if(!t){t={id:uid(),text:td.text,done:false,tid:id};T.push(t);}
+  await completeTask(t.id);
+}
+
 /* ===== main flows ===== */
 // タスク完了 → EXP → モンスター出現(バトル)
 async function completeTask(id){
@@ -1804,6 +1893,12 @@ async function completeTask(id){
   try{
     t.done=true;t.at=Date.now();
     const ex=gainExp(EXP_TASK);
+    // 「しめきり・やること」から来たタスクなら、そちらも完了にする
+    const td=t.tid&&S.todos.find(x=>x.id===t.tid);
+    if(td&&!td.done){
+      td.done=true;td.doneAt=Date.now();
+      if(td.due&&tk<=td.due)ex.push({t:'しめきりを まもった!',k:'learn'},...gainExp(EXP_DEADLINE).map(x=>x.k?x:{t:'ボーナス! '+x.t}));
+    }
     if(T.every(x=>x.done)&&!S.bonus[tk]){
       S.bonus[tk]=true;
       ex.push({t:'きょうの タスクを\nすべて おえた!',k:'all'},...gainExp(EXP_ALL).map(x=>x.k?x:{t:'ボーナス! '+x.t}));
@@ -1827,7 +1922,7 @@ function addTask(b){
 }
 document.addEventListener('keydown',e=>{
   const t=e.target;if(!t.classList||!t.classList.contains('tin')||e.key!=='Enter'||e.isComposing)return;
-  e.preventDefault();const b=t.parentElement.querySelector('[data-act=addTask]');if(b)addTask(b);
+  e.preventDefault();const b=t.parentElement.querySelector('[data-act=addTask],[data-act=addTodo]')||t.closest('.todoadd')&&t.closest('.todoadd').querySelector('[data-act=addTodo]');if(b)ACT[b.dataset.act](b);
 });
 function findTask(b){
   const k=b.dataset.k,id=b.dataset.id;
@@ -1940,6 +2035,17 @@ function renderEd(){
 const ACT={
   tab:b=>showView(b.dataset.v),
   addTask,
+  addTodo:()=>addTodo(),
+  dueQuick:b=>{$('#todoDue').value=b.dataset.n===''?'':addDays(dkey(),+b.dataset.n);},
+  tdQuick:b=>{$('#tdDue').value=b.dataset.n===''?'':addDays(dkey(),+b.dataset.n);},
+  todoDo:b=>completeTodo(b.dataset.id),
+  todoToday:b=>{const td=S.todos.find(x=>x.id===b.dataset.id);if(!td||inTodayList(td.id))return;(S.tasks[dkey()]=S.tasks[dkey()]||[]).push({id:uid(),text:td.text,done:false,tid:td.id});save();renderAll();toast('今日の タスクに 入れました');},
+  todoEdit:b=>{const t=S.todos.find(x=>x.id===b.dataset.id);if(t)todoForm(t);},
+  todoNewDue:b=>todoForm(null,b.dataset.k),
+  todoSave:b=>saveTodo(b.dataset.id),
+  todoDel:b=>{const t=S.todos.find(x=>x.id===b.dataset.id);if(!t||!confirm(`「${t.text}」を 削除しますか?`))return;S.todos=S.todos.filter(x=>x!==t);const tk=dkey();if(S.tasks[tk]){S.tasks[tk]=S.tasks[tk].filter(x=>!(x.tid===t.id&&!x.done));if(!S.tasks[tk].length)delete S.tasks[tk];}save();closeModal();renderAll();},
+  todoShowDone:()=>{TODO_SHOWDONE=!TODO_SHOWDONE;renderTodos();},
+  todoUndo:b=>{const t=S.todos.find(x=>x.id===b.dataset.id);if(t){t.done=false;delete t.doneAt;save();renderAll();}},
   rtNew:()=>routineForm(null),
   rtEdit:b=>routineForm(S.routines.find(r=>r.id===b.dataset.id)),
   rtDay:b=>{const d=+b.dataset.d;if(RT.days.has(d))RT.days.delete(d);else RT.days.add(d);renderRtDays();},
