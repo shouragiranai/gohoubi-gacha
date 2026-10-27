@@ -306,7 +306,7 @@ h2{font-size:18px;margin:4px 0 12px}
 .bp.act{border-color:#ffd23f}.bp.low{color:#ffb03b}.bp.dead{color:#ff4f4f}
 .bp.hurt{animation:bpHurt .45s}
 @keyframes bpHurt{0%,50%{background:#c0182f}100%{background:transparent}}
-#mon.inb .mon-stage{top:calc(var(--st) + 104px)}
+#mon.inb .mon-stage{top:calc(var(--st) + 152px)}
 .ehp{width:150px;height:6px;border-radius:9px;background:rgba(255,255,255,.15);margin-top:8px;overflow:hidden}
 .ehp i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff5f6d,#ffb03b);transition:width .4s}
 .mon-ico.hit{animation:ehit .5s steps(1,end)}
@@ -430,6 +430,20 @@ h2{font-size:18px;margin:4px 0 12px}
 .tbtns .btn{min-height:48px;padding:0 4px;font-size:13px}
 .tbtns .btn.on{background:#1f5d8a;border-color:#3fa9ff}
 .tbtns .bdone{min-width:0;min-height:48px;font-size:15px}
+.estage{display:flex;justify-content:center;align-items:flex-end;gap:4px;width:100%;padding:0 6px}
+.ewrap{display:flex;flex-direction:column;align-items:center;min-width:0;flex:0 1 auto;transition:opacity .5s,transform .5s}
+.ewrap.gone{opacity:0;transform:scale(.6);pointer-events:none}
+.estage.n1 .mon-ico{width:170px;height:170px}
+.estage.n2 .mon-ico{width:128px;height:128px}
+.estage.n3 .mon-ico{width:100px;height:100px}
+.estage.n4 .mon-ico{width:80px;height:80px}
+.ename{font-size:12px;font-weight:800;margin-top:4px;white-space:nowrap;text-shadow:0 2px 0 #000}
+.ename small{color:#9fe9ff;font-size:10px}
+.ewrap .ehp{width:88%;max-width:140px;margin-top:4px}
+.echip{font-size:10px;font-weight:800;margin-top:4px;padding:2px 6px;border-radius:99px;background:rgba(0,0,0,.55);border:1px solid var(--rc,#666);white-space:nowrap}
+.estage.picking .ewrap:not(.gone){cursor:pointer;animation:tpick 1s ease-in-out infinite}
+@keyframes tpick{50%{filter:drop-shadow(0 0 10px #ffd23f)}}
+.bch small{display:block;color:#9fe9ff;font-size:11px;margin:2px 0 0}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -559,7 +573,7 @@ h2{font-size:18px;margin:4px 0 12px}
   <div class="rainbow" id="monRb"><i></i></div>
   <div class="rare-banner" id="rareBanner"></div>
   <div class="bparty" id="bparty" hidden></div>
-  <div class="mon-stage"><div class="mon-ico" id="monIco"></div><div class="ehp" id="ehp" hidden><i></i></div><div class="mon-badge" id="monBadge"></div></div>
+  <div class="mon-stage"><div class="estage" id="estage"></div><div class="mon-badge" id="monBadge"></div></div>
   <div class="dqwin" id="dqwin"><div id="dqtxt"></div><span class="dqnext" id="dqnext">▼</span></div>
   <div class="bcmd" id="bcmd" hidden></div>
   <button class="autobtn" id="autoBtn" hidden>オート</button>
@@ -1342,8 +1356,8 @@ function mkAlly(p){
   (c.fx.uses||[]).forEach(([n,u])=>{const s=itemSkill(n,u);if(s)f.sp.push(s);});
   return f;
 }
-async function battleLoot(m,opt){
-  const g=m.g||0;
+async function battleLoot(m,opt,gold){
+  const g=gold!=null?gold:(m.g||0);
   if(g){if(!opt.test){S.gold+=g;save();}SND.coin();await say(`${g}ゴールドを てにいれた!`);}
   if(m.drop&&(opt.forceDrop||Math.random()<1/m.drop[1])){
     const n=m.drop[0];if(!opt.test){bagAdd(n);save();}
@@ -1487,12 +1501,21 @@ function mkF(m,lv,name,enemy,mul=1){
   return {m,lv,name,enemy,mhp,hp:mhp,mmp:s.mp,mp:s.mp,atk:s.atk+5+lv*2,def:s.def,spd:s.spd,sp:learned(m,lv).map(spellKind),st:{},defM:1,atkM:1,charge:false,guard:false,fx:{}};
 }
 const canUse=(u,s)=>s.kind!=='field'&&s.mp<=u.mp&&!(u.st.silence&&isSpellN(s.name));
+/* --- 複数の敵 ---
+   出現数の確率(1〜4体)と、数が多いときの 1体あたりの HP・攻撃力の倍率 */
+const EN_P=[.45,.30,.17,.08],EN_HP=[0,1,.5,.36,.28],EN_ATK=[0,1,.62,.5,.42];
+const eEl=e=>document.getElementById('ei'+e.idx);
 function renderB(){
   if(!B)return;
   $('#bparty').innerHTML=B.allies.map((a,k)=>`<div class="bp${a.hp<=0?' dead':a.hp<a.mhp/4?' low':''}${B.active===a?' act':''}" id="bp${k}"><b>${esc(a.name)}</b><span>H ${a.hp}</span><span>M ${a.mp}</span><span>Lv${a.lv}</span></div>`).join('');
-  $('#ehp i').style.width=(B.enemy.hp/B.enemy.mhp*100)+'%';
+  for(const e of B.enemies){
+    const bar=document.getElementById('eh'+e.idx);if(bar)bar.style.width=(e.hp/e.mhp*100)+'%';
+    // たおれた敵:最後に たおした敵を おぼえておく(仲間・ドロップの対象)
+    if(e.hp<=0&&!e.koed){e.koed=true;B.lastKO=e;const w=document.getElementById('ew'+e.idx);if(w)setTimeout(()=>w.classList.add('gone'),350);}
+  }
 }
 function pop(el,text,cls=''){
+  if(!el)return;
   const r=el.getBoundingClientRect(),d=document.createElement('div');d.className='pop '+cls;d.textContent=text;
   d.style.left=(r.left+r.width/2)+'px';d.style.top=(r.top+r.height*.4)+'px';$('#mon').appendChild(d);setTimeout(()=>d.remove(),950);
 }
@@ -1501,7 +1524,7 @@ function fxCast(toEnemy,name){
     :/ヒャド|ふぶき|つめたい|こごえる|かがやく/.test(name)?['#7ef0ff','#ffffff','#3fa9ff']
     :/バギ/.test(name)?['#6bff9a','#d6ffe4','#2fbf71']
     :/デイン|いなずま/.test(name)?['#fff23b','#ffffff','#ffd23f']:['#ffffff','#ffe27a','#ff9ad5'];
-  const r=(toEnemy?$('#monIco'):$('#bparty')).getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
+  const r=(toEnemy?$('#estage'):$('#bparty')).getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
   FX.sparks(50,pal,{x,y,sp:[2,9]});FX.ring(pal[0],{x,y,v:9,w:6,life:30});
   if(/イオ|デイン|いなずま/.test(name))restart($('#mflash'),'go');
 }
@@ -1526,32 +1549,37 @@ async function inflict(t,st){
   await bsay(t.name+ST_MSG[st],1);
 }
 async function hurt(t,d,o={}){
-  t.hp=Math.max(0,t.hp-d);renderB();
+  t.hp=Math.max(0,t.hp-d);
   if(t.enemy){
-    const ico=$('#monIco');if(d>0){restart(ico,'hit');setTimeout(()=>ico.classList.remove('hit'),520);}
+    const ico=eEl(t);if(d>0&&ico){restart(ico,'hit');setTimeout(()=>ico.classList.remove('hit'),520);}
     SND.hitE(o.crit);pop(ico,d,o.crit?'crit':'');if(o.crit){restart($('#mon'),'shake');vib(60);}
+    renderB();
     await bsay(d>0?`${t.name}に ${d}ポイントの\nダメージを あたえた!`:`${t.name}に\nダメージを あたえられない!`,1);
+    if(t.hp<=0){t.st={};await bsay(`${t.name}を たおした!`,1);return;}
   }else{
+    renderB();
     const c=$('#bp'+B.allies.indexOf(t));
     if(d>0){SND.hurt();restart($('#mon'),'shake');vib(d>t.mhp/3?[80,40,80]:50);}
     if(c){c.classList.add('hurt');pop(c,d);}
     await bsay(d>0?`${t.name}は ${d}ポイントの\nダメージを うけた!`:`${t.name}は\nダメージを うけない!`,1);
+    if(t.hp<=0){t.st={};t.charge=false;SND.ko();await bsay(`${t.name}は しんでしまった!`,1);return;}
   }
-  if(t.hp<=0){t.st={};t.charge=false;if(!t.enemy){SND.ko();await bsay(`${t.name}は しんでしまった!`,1);}}
-  else if(t.st.sleep&&d>0&&Math.random()<.5){delete t.st.sleep;await bsay(`${t.name}は めをさました!`,1);}
+  if(t.st.sleep&&d>0&&Math.random()<.5){delete t.st.sleep;await bsay(`${t.name}は めをさました!`,1);}
 }
 async function doAttack(u,t,o={}){
   await bsay(o.label||`${u.name}の こうげき!`,o.append);
   const F=u.fx,hits=!o.label&&F.dbl?2:1;
   for(let h=0;h<hits;h++){
-    if(t.hp<=0||u.hp<=0)break;
+    if(u.hp<=0)break;
+    // ねらった敵が もう たおれていたら、のこりの敵に きりかえる
+    if(t.hp<=0){const rest=alive(t.enemy?B.enemies:B.allies);if(!rest.length)break;t=pickR(rest);}
     if(h)await bsay(`${u.name}の 2かいめの こうげき!`,1);
     SND.swing();
     if(t.fx.evade&&Math.random()<t.fx.evade){SND.miss();await bsay(`${t.name}は ひらりと みをかわした!`,1);continue;}
     if(F.majin&&!o.crit&&Math.random()<.5){SND.miss();await bsay(`ミス! ${t.name}に\nダメージを あたえられない!`,1);continue;}
     if(!F.majin&&!o.crit&&Math.random()<(u.st.blind?.5:1/32)){SND.miss();await bsay(`ミス! ${t.name}に\nダメージを あたえられない!`,1);continue;}
     if(F.kill&&Math.random()<F.kill){
-      t.hp=0;t.st={};renderB();SND.hitE(true);if(t.enemy)restart($('#monIco'),'hit');
+      t.hp=0;t.st={};SND.hitE(true);if(t.enemy)restart(eEl(t),'hit');renderB();
       await bsay(`きゅうしょに あたった!\n${t.name}を たおした!`,1);break;
     }
     if(F.needle){await hurt(t,1);continue;}
@@ -1570,11 +1598,20 @@ async function doAttack(u,t,o={}){
   }
 }
 function verb(s){const n=s.name;return s.item?`${n}を つかった!`:isSpellN(n)?`${n}を となえた!`:BREATH.test(n)?`${n}を はいた!`:/おどり/.test(n)?`${n}を おどった!`:`${n}を つかった!`;}
+// 敵にむける じゅもん・とくぎで、ねらう相手を えらぶ必要があるか
+const FOE_KINDS=['dmg','status','death','defDown','mpDrain','weak','hitSt','crit'];
+const needsFoeTarget=s=>FOE_KINDS.includes(s.kind)&&(s.tg==='敵単体'||s.tg==='敵グループ');
 async function doSpell(u,s,target){
-  const foes=u.enemy?alive(B.allies):alive([B.enemy]),friends=u.enemy?[B.enemy]:B.allies;
-  const tgFoes=()=>s.tg==='敵単体'?[pickR(foes)]:foes;
+  const foes=u.enemy?alive(B.allies):alive(B.enemies),friends=u.enemy?B.enemies:B.allies;
+  // 敵単体=ねらった1体、敵グループ=ねらった敵と おなじ しゅるい全部、敵全体=全部
+  const tgFoes=()=>{
+    if(!foes.length)return [];
+    if(u.enemy)return s.tg==='敵単体'?[pickR(foes)]:foes;
+    const t0=target&&target.enemy&&target.hp>0?target:pickR(foes);
+    return s.tg==='敵単体'?[t0]:s.tg==='敵グループ'?foes.filter(x=>x.m===t0.m):foes;
+  };
   const refl=t=>isSpellN(s.name)&&(t.st.reflect||(t.fx.reflect&&Math.random()<t.fx.reflect));
-  if(s.kind==='hitSt'||s.kind==='crit'){u.mp-=s.mp;renderB();await doAttack(u,pickR(foes),{label:`${u.name}の ${s.name}!`,crit:s.kind==='crit',st:s.st,rate:s.rate});return;}
+  if(s.kind==='hitSt'||s.kind==='crit'){u.mp-=s.mp;renderB();await doAttack(u,tgFoes()[0],{label:`${u.name}の ${s.name}!`,crit:s.kind==='crit',st:s.st,rate:s.rate});return;}
   await bsay(`${u.name}は ${verb(s)}`);u.mp-=s.mp;renderB();SND.cast();
   if(u.st.silence&&isSpellN(s.name)){await bsay('しかし じゅもんは\nふうじこめられている!',1);return;}
   switch(s.kind){
@@ -1591,11 +1628,11 @@ async function doSpell(u,s,target){
       }
       break;
     case 'heal':{
-      const ts=s.self?[u]:s.all?alive(friends):[target&&target.hp>0?target:alive(friends).sort((a,b)=>a.hp/a.mhp-b.hp/b.mhp)[0]];
+      const ts=s.self?[u]:s.all?alive(friends):[target&&target.hp>0&&!target.enemy===!u.enemy?target:alive(friends).sort((a,b)=>a.hp/a.mhp-b.hp/b.mhp)[0]];
       SND.healS();
       for(const t of ts){
         const amt=s.full?t.mhp:Math.round(rnd(s.min,s.max)),before=t.hp;t.hp=Math.min(t.mhp,t.hp+amt);renderB();
-        const el=t.enemy?$('#monIco'):$('#bp'+B.allies.indexOf(t));if(el)pop(el,t.hp-before,'heal');
+        pop(t.enemy?eEl(t):$('#bp'+B.allies.indexOf(t)),t.hp-before,'heal');
         await bsay(t.hp>=t.mhp?`${t.name}の キズが\nすっかり かいふくした!`:`${t.name}の HPが\n${t.hp-before}ポイント かいふくした!`,1);
       }
       break;}
@@ -1605,8 +1642,8 @@ async function doSpell(u,s,target){
       if(Math.random()<s.rate){t.hp=s.half?Math.ceil(t.mhp/2):t.mhp;t.st={};SND.healS();renderB();await bsay(`なんと ${t.name}が\nいきかえった!`,1);}
       else await bsay(`しかし ${t.name}は\nいきかえらなかった…`,1);
       break;}
-    case 'defUp':for(const t of s.all?alive(friends):[target&&target.hp>0?target:u]){t.defM=Math.min(2.2,t.defM+s.v);await bsay(`${t.name}の しゅびりょくが あがった!`,1);}break;
-    case 'atkUp':{const t=target&&target.hp>0?target:u;t.atkM=2;await bsay(`${t.name}の こうげきりょくが\nぐーんと あがった!`,1);break;}
+    case 'defUp':for(const t of s.all?alive(friends):[target&&target.hp>0&&!target.enemy===!u.enemy?target:u]){t.defM=Math.min(2.2,t.defM+s.v);await bsay(`${t.name}の しゅびりょくが あがった!`,1);}break;
+    case 'atkUp':{const t=target&&target.hp>0&&!target.enemy===!u.enemy?target:u;t.atkM=2;await bsay(`${t.name}の こうげきりょくが\nぐーんと あがった!`,1);break;}
     case 'charge':u.charge=true;await bsay(`${u.name}は ちからを ためている!`,1);break;
     case 'defDown':for(const t of tgFoes()){if(refl(t)){await bsay('しかし はねかえされた!',1);continue;}t.defM=Math.max(.25,t.defM-s.v/2);await bsay(`${t.name}の しゅびりょくが さがった!`,1);}break;
     case 'status':
@@ -1618,15 +1655,14 @@ async function doSpell(u,s,target){
       break;
     case 'death':
       for(const t of tgFoes()){
-        if(t.hp>0&&Math.random()<s.rate*(t.weak?1.5:1)*(u.enemy?.5:1)*(t.fx.resist||1)){t.hp=0;t.st={};renderB();if(t.enemy)restart($('#monIco'),'hit');else SND.ko();await bsay(`${t.name}は いきたえた!`,1);}
+        if(t.hp>0&&Math.random()<s.rate*(t.weak?1.5:1)*(u.enemy?.5:1)*(t.fx.resist||1)){t.hp=0;t.st={};if(t.enemy)restart(eEl(t),'hit');else SND.ko();renderB();await bsay(`${t.name}は いきたえた!`,1);}
         else await bsay(`${t.name}には きかなかった!`,1);
       }
       break;
     case 'sac':
       u.hp=0;u.st={};renderB();SND.boom(0);restart($('#mflash'),'go');restart($('#mon'),'shake');
-      for(const t of foes)t.hp=s.mode==='kill'&&Math.random()<.7?0:Math.max(1,Math.floor(t.hp*.1));
-      renderB();await bsay(`${u.name}は ちからつきた…`,1);
-      for(const t of foes)await bsay(t.hp<=0?`${t.name}を たおした!`:`${t.name}は おおきな ダメージを うけた!`,1);
+      await bsay(`${u.name}は ちからつきた…`,1);
+      for(const t of foes){t.hp=s.mode==='kill'&&Math.random()<.7?0:Math.max(1,Math.floor(t.hp*.1));renderB();await bsay(t.hp<=0?`${t.name}を たおした!`:`${t.name}は おおきな ダメージを うけた!`,1);}
       break;
     case 'megazal':
       u.hp=0;renderB();for(const t of friends)if(t!==u){t.hp=t.mhp;t.st={};}renderB();SND.healS();
@@ -1634,17 +1670,17 @@ async function doSpell(u,s,target){
     case 'mpDrain':for(const t of tgFoes()){const x=Math.min(t.mp,Math.round(rnd(s.min,s.max)));t.mp-=x;if(s.absorb)u.mp=Math.min(u.mmp,u.mp+x);renderB();await bsay(x>0?`${t.name}の MPを ${x}ポイント\n${s.absorb?'すいとった':'へらした'}!`:`${t.name}には きかなかった!`,1);}break;
     case 'parup':{
       const r=Math.random();
-      if(r<.3){await bsay('てんちが さけ\nおおばくはつが おこった!',1);restart($('#mflash'),'go');for(const t of foes)await hurt(t,Math.round(rnd(120,200)));}
+      if(r<.3){await bsay('てんちが さけ\nおおばくはつが おこった!',1);restart($('#mflash'),'go');for(const t of foes)if(t.hp>0)await hurt(t,Math.round(rnd(120,200)));}
       else if(r<.5){for(const t of friends)if(t.hp>0)t.hp=t.mhp;renderB();SND.healS();await bsay('ふしぎな ひかりが みかたを\nすっかり かいふくした!',1);}
       else if(r<.7){for(const t of foes)t.st.sleep=true;await bsay('てきは ねむってしまった!',1);}
       else await bsay('しかし なにも おこらなかった!',1);
       break;}
     case 'fubaha':if(u.enemy)B.efub=4;else B.fub=4;await bsay('やさしい ひかりが\nみかたを つつみこんだ!',1);break;
-    case 'reflect':{const t=target&&target.hp>0?target:u;t.st.reflect=4;await bsay(`ふしぎな かべが\n${t.name}を つつみこんだ!`,1);break;}
+    case 'reflect':{const t=target&&target.hp>0&&!target.enemy===!u.enemy?target:u;t.st.reflect=4;await bsay(`ふしぎな かべが\n${t.name}を つつみこんだ!`,1);break;}
     case 'mahokite':u.mp=Math.min(u.mmp,u.mp+Math.ceil(u.mmp/4));renderB();await bsay(`${u.name}の MPが かいふくした!`,1);break;
     case 'dispel':for(const t of foes){t.defM=1;t.atkM=1;t.charge=false;delete t.st.reflect;}if(u.enemy)B.fub=0;else B.efub=0;await bsay('いてつくはどうが\nあらゆる こうかを かきけした!',1);break;
     case 'weak':for(const t of tgFoes()){t.weak=true;await bsay(`${t.name}の ていこうりょくが\nさがった!`,1);}break;
-    case 'cure':{const t=target&&target.hp>0?target:alive(friends).find(x=>x.st.poison||x.st.poison2||x.st.para)||u;delete t.st.poison;delete t.st.poison2;delete t.st.para;await bsay(`${t.name}の からだが\nもとに もどった!`,1);break;}
+    case 'cure':{const t=target&&target.hp>0&&!target.enemy===!u.enemy?target:alive(friends).find(x=>x.st.poison||x.st.poison2||x.st.para)||u;delete t.st.poison;delete t.st.poison2;delete t.st.para;await bsay(`${t.name}の からだが\nもとに もどった!`,1);break;}
     default:await bsay('しかし ここでは つかえない!',1);
   }
 }
@@ -1655,16 +1691,17 @@ async function doAct(a){
   if(u.st.skip){delete u.st.skip;await bsay(`${u.name}は うごけない!`);return;}
   if(u.st.conf&&Math.random()<.6){
     await bsay(`${u.name}は こんらんしている!`);
-    const pool=[...alive(B.allies),...alive([B.enemy])].filter(x=>x!==u);
+    const pool=[...alive(B.allies),...alive(B.enemies)].filter(x=>x!==u);
     if(pool.length)await doAttack(u,pickR(pool),{append:true});
     return;
   }
   if(a.type==='guard'){await bsay(`${u.name}は みを まもっている。`);return;}
   if(a.type==='spell'&&a.spell&&canUse(u,a.spell)){await doSpell(u,a.spell,a.target);return;}
-  await doAttack(u,u.enemy?pickR(alive(B.allies)):B.enemy);
+  const foes=alive(u.enemy?B.allies:B.enemies);if(!foes.length)return;
+  await doAttack(u,!u.enemy&&a.target&&a.target.hp>0?a.target:pickR(foes));
 }
 async function endTurn(){
-  for(const t of [...B.allies,B.enemy]){
+  for(const t of [...B.allies,...B.enemies]){
     t.guard=false;if(t.hp<=0)continue;
     if(t.fx.regen&&t.hp<t.mhp){const x=Math.min(t.mhp-t.hp,Math.round(rnd(t.fx.regen[0],t.fx.regen[1])));t.hp+=x;renderB();await bsay(`${t.name}の HPが ${x} かいふくした!`);}
     if(t.st.poison||t.st.poison2){
@@ -1680,17 +1717,19 @@ async function endTurn(){
   }
   if(B.fub>0)B.fub--;if(B.efub>0)B.efub--;
 }
-function enemyPlan(){
-  const e=B.enemy,us=e.sp.filter(s=>canUse(e,s));
-  if(e.hp<e.mhp*.35){const h=us.find(s=>s.kind==='heal');if(h&&Math.random()<.6)return {type:'spell',spell:h};}
+function enemyPlan(e){
+  const us=e.sp.filter(s=>canUse(e,s));
+  const hurtE=alive(B.enemies).filter(x=>x.hp<x.mhp*.35);
+  if(hurtE.length){const h=us.find(s=>s.kind==='heal');if(h&&Math.random()<.6)return {type:'spell',spell:h,target:hurtE[0]};}
   const off=us.filter(s=>s.kind!=='heal');
   if(off.length&&Math.random()<.35)return {type:'spell',spell:pickR(off)};
   return {type:'atk'};
 }
-// オート時の作戦(ガンガンいこうぜ+いのちだいじに の中間)
+// オート時の作戦(ガンガンいこうぜ+いのちだいじに の中間)。HPの へった敵から ねらう
 function allyPlan(u){
   const us=u.sp.filter(s=>canUse(u,s)&&s.kind!=='sac'),by=k=>us.filter(s=>s.kind===k);
   const dead=B.allies.filter(a=>a.hp<=0),low=alive(B.allies).filter(a=>a.hp<a.mhp*.4).sort((a,b)=>a.hp/a.mhp-b.hp/b.mhp);
+  const foes=alive(B.enemies),weakest=foes.slice().sort((a,b)=>a.hp-b.hp)[0];
   if(dead.length){
     const r=by('revive').sort((a,b)=>b.rate-a.rate)[0];if(r)return {type:'spell',spell:r,target:dead[0]};
     const mz=by('megazal')[0];if(mz&&dead.length>=2)return {type:'spell',spell:mz};
@@ -1700,51 +1739,95 @@ function allyPlan(u){
     const one=hs.filter(s=>!s.all&&(!s.self||low[0]===u)).sort((a,b)=>a.mp-b.mp),need=low[0].mhp-low[0].hp;
     const pk=one.find(s=>s.full||s.max>=need*.7)||one[one.length-1];if(pk)return {type:'spell',spell:pk,target:low[0]};
   }
-  const avg=Math.max(1,(u.atk*u.atkM-B.enemy.def*B.enemy.defM/2)/2),dm=by('dmg').sort((a,b)=>b.max-a.max)[0];
-  if(dm&&(dm.min+dm.max)/2>avg*1.2&&Math.random()<.75)return {type:'spell',spell:dm};
-  if(B.turn<=2&&Math.random()<.35){const b=[...by('defDown'),...by('atkUp'),...by('defUp').filter(s=>s.all),...by('charge'),...by('fubaha')];if(b.length)return {type:'spell',spell:pickR(b),target:u};}
-  const st=[...by('status'),...by('hitSt'),...by('crit')];if(st.length&&Math.random()<.15)return {type:'spell',spell:pickR(st)};
-  return {type:'atk'};
+  const atkAvg=Math.max(1,(u.atk*u.atkM-weakest.def*weakest.defM/2)/2);
+  // こうげき呪文は「あたる数×ダメージ」が いちばん大きいものを えらぶ
+  let best=null,bestV=0,bestT=weakest;
+  for(const s of by('dmg')){
+    let t=weakest,n=1;
+    if(s.tg==='敵グループ'){const g={};foes.forEach(f=>g[f.m.no]=(g[f.m.no]||0)+1);const no=+Object.keys(g).sort((a,b)=>g[b]-g[a])[0];t=foes.find(f=>f.m.no===no);n=g[no];}
+    else if(s.tg!=='敵単体')n=foes.length;
+    const v=(s.min+s.max)/2*n;if(v>bestV){bestV=v;best=s;bestT=t;}
+  }
+  if(best&&bestV>atkAvg*1.2&&Math.random()<.75)return {type:'spell',spell:best,target:bestT};
+  if(B.turn<=2&&Math.random()<.35){const b=[...by('defDown'),...by('atkUp'),...by('defUp').filter(s=>s.all),...by('charge'),...by('fubaha')];if(b.length){const s=pickR(b);return {type:'spell',spell:s,target:s.kind==='defDown'?weakest:u};}}
+  const st=[...by('status'),...by('hitSt'),...by('crit')];if(st.length&&Math.random()<.15)return {type:'spell',spell:pickR(st),target:weakest};
+  return {type:'atk',target:weakest};
 }
 function syncAuto(){const b=$('#autoBtn');b.classList.toggle('on',S.settings.auto);b.textContent=S.settings.auto?'▶ オート中':'オート';}
 $('#autoBtn').addEventListener('click',e=>{e.stopPropagation();S.settings.auto=!S.settings.auto;save();syncAuto();SND.click();if(S.settings.auto&&B&&B.cmdAbort)B.cmdAbort();});
+// ねらう敵を えらんでいる あいだは、敵の絵を タップしても えらべる
+$('#estage').addEventListener('click',e=>{const w=e.target.closest('.ewrap');if(w&&B&&B.picking){e.stopPropagation();B.picking(+w.dataset.k);}});
 function chooseCmd(u,idx){
   return new Promise(res=>{
     const box=$('#bcmd');let cur=null;
-    const main=()=>{box.innerHTML=`<div class="bch">${esc(u.name)}は どうする?</div><div class="bgrid"><button data-b="atk">⚔ たたかう</button><button data-b="spell"${u.sp.length?'':' disabled'}>✨ じゅもん・とくぎ</button><button data-b="guard">🛡 ぼうぎょ</button>${idx===0?'<button data-b="run">🏃 にげる</button>':'<button data-b="back">↩ もどる</button>'}</div>`;};
-    const spells=()=>{box.innerHTML=`<div class="bch">${esc(u.name)} の じゅもん・とくぎ <small>MP ${u.mp}</small></div><div class="blist">${u.sp.map((s,j)=>{
+    const setPick=fn=>{B.picking=fn;$('#estage').classList.toggle('picking',!!fn);};
+    const main=()=>{setPick(null);box.innerHTML=`<div class="bch">${esc(u.name)}は どうする?</div><div class="bgrid"><button data-b="atk">⚔ たたかう</button><button data-b="spell"${u.sp.length?'':' disabled'}>✨ じゅもん・とくぎ</button><button data-b="guard">🛡 ぼうぎょ</button>${idx===0?'<button data-b="run">🏃 にげる</button>':'<button data-b="back">↩ もどる</button>'}</div>`;};
+    const spells=()=>{setPick(null);box.innerHTML=`<div class="bch">${esc(u.name)} の じゅもん・とくぎ <small>MP ${u.mp}</small></div><div class="blist">${u.sp.map((s,j)=>{
       const ok=canUse(u,s)&&!(s.kind==='revive'&&!B.allies.some(a=>a.hp<=0));
       return `<button data-b="sp" data-j="${j}"${ok?'':' disabled'}><b>${esc(s.name)} <span>MP${s.mp}</span></b><small>${s.kind==='field'?'せんとうでは つかえない':esc(s.tg+'・'+s.ef)}</small></button>`;}).join('')}</div><button class="bback" data-b="main">↩ もどる</button>`;};
-    const targets=s=>{const list=s.kind==='revive'?B.allies.filter(a=>a.hp<=0):alive(B.allies);
+    const targets=s=>{setPick(null);const list=s.kind==='revive'?B.allies.filter(a=>a.hp<=0):alive(B.allies);
       box.innerHTML=`<div class="bch">${esc(s.name)}を だれに つかう?</div><div class="blist">${list.map(a=>`<button data-b="tg" data-k="${B.allies.indexOf(a)}"><b>${esc(a.name)}</b><small>HP ${a.hp}/${a.mhp}</small></button>`).join('')}</div><button class="bback" data-b="spell">↩ もどる</button>`;};
-    const done=v=>{box.removeEventListener('click',h);B.cmdAbort=null;res(v);};
+    // 敵を えらぶ(グループ向けは しゅるいごとに 1つ)
+    const foePick=(s)=>{
+      const foes=alive(B.enemies),grp=s&&s.tg==='敵グループ';
+      const list=grp?foes.filter((f,i)=>foes.findIndex(x=>x.m===f.m)===i):foes;
+      if(list.length<=1)return pickDone(list[0]);
+      setPick(k=>pickDone(B.enemies[k]));
+      box.innerHTML=`<div class="bch">${s?`${esc(s.name)}を `:''}どの ${grp?'グループ':'てき'}に?<small>てきの絵を タップしても えらべます</small></div><div class="blist">${list.map(f=>{const n=foes.filter(x=>x.m===f.m).length;
+        return `<button data-b="et" data-k="${f.idx}"><b>${grp?esc(f.m.name)+(n>1?` ×${n}`:''):esc(f.name)}</b></button>`;}).join('')}</div><button class="bback" data-b="${s?'spell':'main'}">↩ もどる</button>`;
+      cur=s;
+    };
+    const pickDone=t=>done(cur?{type:'spell',spell:cur,target:t}:{type:'atk',target:t});
+    const done=v=>{box.removeEventListener('click',h);setPick(null);B.cmdAbort=null;res(v);};
     const h=e=>{
       const b=e.target.closest('[data-b]');e.stopPropagation();if(!b||b.disabled)return;SND.click();const k=b.dataset.b;
-      if(k==='atk'||k==='guard'||k==='run'||k==='back')done({type:k});
+      if(k==='atk'){cur=null;foePick(null);}
+      else if(k==='guard'||k==='run'||k==='back')done({type:k});
       else if(k==='spell')spells();else if(k==='main')main();
-      else if(k==='sp'){cur=u.sp[+b.dataset.j];if(cur.tg==='味方単体')targets(cur);else done({type:'spell',spell:cur});}
+      else if(k==='sp'){const s=u.sp[+b.dataset.j];cur=s;if(s.tg==='味方単体')targets(s);else if(needsFoeTarget(s))foePick(s);else done({type:'spell',spell:s});}
       else if(k==='tg')done({type:'spell',spell:cur,target:B.allies[+b.dataset.k]});
+      else if(k==='et')pickDone(B.enemies[+b.dataset.k]);
     };
     box.addEventListener('click',h);B.cmdAbort=()=>done({type:'auto'});
     main();box.hidden=false;$('#dqwin').hidden=true;
   });
 }
-async function battle(m,opt={}){
+// 出現する敵のリスト(同じ しゅるいの むれが おおめ、ときどき まざる)
+function makeEncounter(first,nAllies){
+  let r=Math.random(),n=1;for(let i=0;i<EN_P.length;i++){if(r<EN_P[i]){n=i+1;break;}r-=EN_P[i];}
+  n=Math.min(n,nAllies+1,4);
+  const list=[first];for(let i=1;i<n;i++)list.push(Math.random()<.6?first:pickR(MONSTERS));
+  return list;
+}
+// 敵の なまえ(同じ しゅるいが 2体以上なら A・B・C…)
+function enemyNames(list){const c={},k={};list.forEach(m=>c[m.no]=(c[m.no]||0)+1);return list.map(m=>c[m.no]>1?m.name+'ABCD'[(k[m.no]=(k[m.no]||0)+1)-1]:m.name);}
+function drawStage(list){
+  const names=enemyNames(list),st=$('#estage');st.className='estage n'+list.length;
+  st.innerHTML=list.map((m,i)=>{const n=owned(m.no).length,sl=n<3?m.slots[n]:null;
+    return `<div class="ewrap" id="ew${i}" data-k="${i}"><div class="mon-ico" id="ei${i}">${monIcon(m)}</div><div class="ename">${esc(names[i])}</div><div class="ehp" hidden><i id="eh${i}"></i></div><div class="echip rk${sl?rankOf(sl.p):1}">${sl?`なかま 1/${sl.p}`:'なかま 3/3'}</div></div>`;}).join('');
+  return names;
+}
+async function battle(list,names,opt={}){
   const allies=partyMembers().map(mkAlly);
-  const avg=allies.reduce((s,a)=>s+a.lv,0)/allies.length;
-  // 敵はパーティ平均より少し低めのレベル。習慣化アプリなので勝てることが多いバランスにする
-  const elv=Math.max(m.st[0][0],Math.min(maxLv(m),Math.round(avg+rnd(-3,.5))));
-  // 1対多数になるので敵のHPは人数に応じて増やす
-  const enemy=mkF(m,elv,m.name,true);
-  // 種族ごとの強さの差が大きすぎないよう、能力値をパーティ平均に寄せる
+  const avg=allies.reduce((s,a)=>s+a.lv,0)/allies.length,ne=list.length;
   const bl=allies.length<=2?BAL.blendFew:BAL.blend;
-  for(const k of ['mhp','atk','def','spd'])enemy[k]=Math.round(bl*enemy[k]+(1-bl)*allies.reduce((s,a)=>s+(a.base||a)[k],0)/allies.length);
-  enemy.mhp=enemy.hp=Math.max(1,Math.round(enemy.mhp*(BAL.hp[0]+BAL.hp[1]*(allies.length-1))));
-  enemy.atk=Math.round(enemy.atk*(allies.length<=2?BAL.atkFew:BAL.atk));
-  enemy.sp=enemy.sp.filter(s=>!['field','sac','megazal','revive','cure'].includes(s.kind));
-  B={allies,enemy,turn:0,fub:0,efub:0,active:null,cmdAbort:null};
-  const ov=$('#mon');ov.classList.add('inb');$('#bparty').hidden=false;$('#ehp').hidden=false;$('#autoBtn').hidden=false;syncAuto();renderB();
-  $('#monBadge').innerHTML+=` <span class="chip">Lv${elv}</span>`;
+  const enemies=list.map((m,i)=>{
+    // 敵はパーティ平均より少し低めのレベル。習慣化アプリなので勝てることが多いバランスにする
+    const elv=Math.max(m.st[0][0],Math.min(maxLv(m),Math.round(avg+rnd(-3,.5))));
+    const e=mkF(m,elv,names[i],true);e.idx=i;
+    // 種族ごとの強さの差が大きすぎないよう、能力値をパーティ平均に寄せる
+    for(const k of ['mhp','atk','def','spd'])e[k]=Math.round(bl*e[k]+(1-bl)*allies.reduce((s,a)=>s+(a.base||a)[k],0)/allies.length);
+    // 1対多数・多数対多数に合わせて HP と攻撃力を調整
+    e.mhp=e.hp=Math.max(1,Math.round(e.mhp*(BAL.hp[0]+BAL.hp[1]*(allies.length-1))*EN_HP[ne]));
+    e.atk=Math.round(e.atk*(allies.length<=2?BAL.atkFew:BAL.atk)*EN_ATK[ne]);
+    e.sp=e.sp.filter(s=>!['field','sac','megazal','revive','cure'].includes(s.kind));
+    return e;
+  });
+  B={allies,enemies,turn:0,fub:0,efub:0,active:null,cmdAbort:null,picking:null,lastKO:null};
+  const ov=$('#mon');ov.classList.add('inb');$('#bparty').hidden=false;$('#autoBtn').hidden=false;syncAuto();
+  document.querySelectorAll('#estage .ehp').forEach(e=>e.hidden=false);
+  enemies.forEach(e=>{const c=document.querySelector(`#ew${e.idx} .ename`);if(c)c.innerHTML=`${esc(e.name)} <small>Lv${e.lv}</small>`;});
+  renderB();
   let result=null;
   while(!result){
     B.turn++;
@@ -1766,21 +1849,22 @@ async function battle(m,opt={}){
       if(Math.random()<.5+B.turn*.1){SND.miss();await bsay('うまく にげきれた!',1);result='run';break;}
       await bsay('しかし まわりこまれてしまった!',1);
     }else acts.forEach((a,k)=>{Q.push({...a,actor:able[k]});if(a.type==='guard')able[k].guard=true;});
-    Q.push({actor:enemy,enemyTurn:true});
-    if(B.allies.length>=3&&Math.random()<BAL.extra)Q.push({actor:enemy,enemyTurn:true});
+    for(const e of alive(B.enemies))Q.push({actor:e,enemyTurn:true});
+    if(ne===1&&B.allies.length>=3&&Math.random()<BAL.extra)Q.push({actor:enemies[0],enemyTurn:true});
     Q.forEach(a=>a.ord=(a.type==='guard'?999:0)+a.actor.spd*rnd(.5,1));
     Q.sort((x,y)=>y.ord-x.ord);
     for(const a of Q){
-      if(enemy.hp<=0||!alive(B.allies).length)break;
+      if(!alive(B.enemies).length||!alive(B.allies).length)break;
       if(a.actor.hp<=0)continue;
-      if(a.enemyTurn)Object.assign(a,enemyPlan());
+      if(a.enemyTurn)Object.assign(a,enemyPlan(a.actor));
       await doAct(a);renderB();
     }
-    if(enemy.hp>0&&alive(B.allies).length)await endTurn();
-    if(enemy.hp<=0)result='win';else if(!alive(B.allies).length)result='lose';
+    if(alive(B.enemies).length&&alive(B.allies).length)await endTurn();
+    if(!alive(B.enemies).length)result='win';else if(!alive(B.allies).length)result='lose';
   }
-  ov.classList.remove('inb');$('#bparty').hidden=true;$('#ehp').hidden=true;$('#autoBtn').hidden=true;$('#bcmd').hidden=true;$('#dqwin').hidden=false;
-  B=null;return {result,elv};
+  ov.classList.remove('inb');$('#bparty').hidden=true;$('#autoBtn').hidden=true;$('#bcmd').hidden=true;$('#dqwin').hidden=false;
+  document.querySelectorAll('#estage .ehp').forEach(e=>e.hidden=true);
+  const out={result,enemies,last:B.lastKO};B=null;return out;
 }
 
 /* ===== 仲間モンスター ===== */
@@ -1794,33 +1878,45 @@ async function say(text){
 }
 async function closeMon(){
   const ov=$('#mon');ov.classList.add('out');await sleep(300);ov.hidden=true;ov.classList.remove('show','out','inb');
-  $('#monRb').classList.remove('on');$('#rareBanner').className='rare-banner';FX.stop();
+  $('#monRb').classList.remove('on');$('#rareBanner').className='rare-banner';$('#estage').innerHTML='';FX.stop();
 }
+function focusLast(last){document.querySelectorAll('#estage .ewrap').forEach((w,i)=>{if(i!==last)w.hidden=true;else{w.classList.remove('gone');w.querySelector('.ehp').hidden=true;}});$('#estage').className='estage n1';}
 async function runMonster(opt={}){
-  const m=opt.m||pickR(MONSTERS);
-  const have=opt.fresh?[]:owned(m.no).slice(),n=have.length,slot=n<3?m.slots[n]:null;
-  const ov=$('#mon'),ico=$('#monIco');
-  ico.className='mon-ico';ico.innerHTML='';$('#dqtxt').textContent='';$('#monBadge').innerHTML='';
+  const ov=$('#mon'),mem=partyMembers().length,battleOn=mem&&!opt.noBattle;
+  const list=opt.m?[opt.m]:battleOn?makeEncounter(pickR(MONSTERS),mem):[pickR(MONSTERS)];
+  $('#estage').innerHTML='';$('#dqtxt').textContent='';$('#monBadge').innerHTML='';
   ov.hidden=false;FX.attach($('#monc'));FX.cy=FX.H*.27;FX.start();await nextFrame();ov.classList.add('show');
   if(opt.exp&&opt.exp.length)await showMsgs(opt.exp);
-  ico.innerHTML=monIcon(m);
-  $('#monBadge').innerHTML=slot?`<span class="chip rk${rankOf(slot.p)}">${n+1}匹目 ・ なかま確率 1/${slot.p}</span>`:`<span class="chip">なかま 3/3 ・ まんいん</span>`;
-  await sleep(200);ico.classList.add('appear');SND.monAppear();vib(40);
-  await sleep(700);ico.className='mon-ico idle';
-  await say(`${m.name}が あらわれた!`);
-  const leave=async()=>{ico.className='mon-ico leave';SND.leave();await say(`${m.name}は さっていった…`);return closeMon();};
-  if(partyMembers().length&&!opt.noBattle){
-    const r=await battle(m,opt);
+  const names=drawStage(list),icos=list.map((m,i)=>document.getElementById('ei'+i));
+  await sleep(150);icos.forEach((ic,i)=>setTimeout(()=>{ic.classList.add('appear');},i*160));SND.monAppear();vib(40);
+  await sleep(700+list.length*160);icos.forEach(ic=>ic.className='mon-ico idle');
+  const groups=[];list.forEach(m=>{const g=groups.find(x=>x.m===m);g?g.n++:groups.push({m,n:1});});
+  await say(groups.map(g=>g.n>1?`${g.m.name}が ${g.n}ひき あらわれた!`:`${g.m.name}が あらわれた!`).join('\n'));
+  const leaveAll=async()=>{
+    document.querySelectorAll('#estage .ewrap:not(.gone) .mon-ico').forEach(ic=>ic.className='mon-ico leave');SND.leave();
+    await say(list.length>1?'まものたちは さっていった…':`${list[0].name}は さっていった…`);return closeMon();
+  };
+  let last=0;
+  if(battleOn){
+    const r=await battle(list,names,opt);
     if(r.result!=='win'){
       if(r.result==='lose'){SND.lose();await say('ぜんめつ してしまった…');await say('…なかまたちは すぐに\nげんきを とりもどした!');}
-      return leave();
+      return leaveAll();
     }
+    last=r.last?r.last.idx:list.length-1;
     if(!opt.test){S.stats.wins=(S.stats.wins||0)+1;save();}
-    ico.className='mon-ico lie';SND.win();vib([60,40,120]);
-    await say(`${m.name}を やっつけた!`);
-    await showMsgs(gainExp(Math.round(8+r.elv*3),opt.test));
-    await battleLoot(m,opt);
+    // 最後に たおした敵だけ のこして たおれた すがたに
+    focusLast(last);
+    document.getElementById('ei'+last).className='mon-ico lie';SND.win();vib([60,40,120]);
+    await say(list.length>1?'まものたちを やっつけた!':`${list[0].name}を やっつけた!`);
+    const exp=Math.round(r.enemies.reduce((s,e)=>s+8+e.lv*3,0)*(list.length>1?.7:1));
+    await showMsgs(gainExp(exp,opt.test));
+    await battleLoot(list[last],opt,list.reduce((s,m)=>s+(m.g||0),0));
   }
+  // 仲間になれるのは 最後に たおした1体だけ
+  const m=list[last],ico=document.getElementById('ei'+last);
+  const have=opt.fresh?[]:owned(m.no).slice(),n=have.length,slot=n<3?m.slots[n]:null;
+  const leave=async()=>{ico.className='mon-ico leave';SND.leave();await say(`${m.name}は さっていった…`);return closeMon();};
   if(!slot)return leave();
   const join=opt.force!=null?opt.force:Math.random()<1/slot.p;
   if(!join)return leave();
@@ -1829,6 +1925,7 @@ async function runMonster(opt={}){
     const e=S.party.findIndex(p=>!p||!owned(p.no)[p.i]);if(e>=0)S.party[e]={no:m.no,i:n};
     (S.mlog[dkey()]=S.mlog[dkey()]||[]).push(`${slot.name}(${m.name})`);save();renderAll();
   }
+  focusLast(last);
   if(!ico.classList.contains('lie')){ico.className='mon-ico lie';await sleep(550);}
   ico.className='mon-ico rise';SND.rise();
   await say(`${m.name}が おきあがり\nなかまに なりたそうに こちらをみている!`);
@@ -1979,8 +2076,8 @@ async function claimPartial(id){
   }finally{BUSY=false;renderAll();}
 }
 async function rewardOverlay(msgs){
-  const ov=$('#mon'),ico=$('#monIco');
-  ico.className='mon-ico';ico.innerHTML='';$('#monBadge').innerHTML='';$('#dqtxt').textContent='';
+  const ov=$('#mon');
+  $('#estage').innerHTML='';$('#monBadge').innerHTML='';$('#dqtxt').textContent='';
   ov.hidden=false;FX.attach($('#monc'));FX.cy=FX.H*.27;FX.start();await nextFrame();ov.classList.add('show');
   await showMsgs(msgs);await closeMon();
 }
