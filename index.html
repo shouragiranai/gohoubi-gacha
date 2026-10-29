@@ -444,6 +444,7 @@ h2{font-size:18px;margin:4px 0 12px}
 .estage.picking .ewrap:not(.gone){cursor:pointer;animation:tpick 1s ease-in-out infinite}
 @keyframes tpick{50%{filter:drop-shadow(0 0 10px #ffd23f)}}
 .bch small{display:block;color:#9fe9ff;font-size:11px;margin:2px 0 0}
+.rbadge.carry{color:#ffb3d0}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -529,6 +530,7 @@ h2{font-size:18px;margin:4px 0 12px}
       <div class="row"><span>効果音</span><button class="sw" data-act="toggle" data-k="sound" id="swSound"></button></div>
       <div class="row"><span>バイブレーション</span><button class="sw" data-act="toggle" data-k="vib" id="swVib"></button></div>
       <div class="row"><span>バトルをオートにする</span><button class="sw" data-act="toggle" data-k="auto" id="swAuto"></button></div>
+      <div class="row"><span>終わらなかった タスクを<br>自動で 次の日に くりこす</span><button class="sw" data-act="toggle" data-k="carry" id="swCarry"></button></div>
       <p class="note">※iPhoneはマナーモード中だと音が鳴りません。バイブはAndroidのみ対応です。</p>
     </div>
     <div class="card">
@@ -611,7 +613,7 @@ const PAL=[['#3fa9ff','#8fd3ff','#ffffff','#2b6bff','#7ef0ff'],['#ffc83d','#ffe2
 /* ===== state ===== */
 const KEY='rewardGacha.v1';
 const fresh=()=>({v:1,tasks:{},bonus:{},hist:{},mlog:{},mons:{},party:[null,null,null,null],
-  settings:{sound:true,vib:true,auto:false},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{},todos:[]});
+  settings:{sound:true,vib:true,auto:false,carry:true},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{},todos:[]});
 // 古い形式のデータを今の形式にそろえる
 function migrate(s){
   const f=fresh(),o={...f,...s,settings:{...f.settings,...s.settings},stats:{...f.stats,...s.stats}};
@@ -671,8 +673,9 @@ function dayInfo(k){
   if(T.length){const d=T.filter(t=>t.done).length;return {done:d,total:T.length,part:T.filter(t=>!t.done&&t.part).length};}
   const h=S.hist[k];return h?{done:h.done||0,total:h.total||0}:{done:0,total:0};
 }
-const achieved=k=>{const i=dayInfo(k);return i.done>0||i.part>0;};
-const allDays=()=>[...new Set([...Object.keys(S.tasks),...Object.keys(S.hist)])];
+const achieved=k=>{const i=dayInfo(k);return i.done>0||i.part>0||!!(S.partLog&&S.partLog[k]);};
+const markPart=k=>{(S.partLog=S.partLog||{})[k]=true;};
+const allDays=()=>[...new Set([...Object.keys(S.tasks),...Object.keys(S.hist),...Object.keys(S.partLog||{})])];
 function streak(){
   const d=new Date();let n=0;
   if(!achieved(dkey(d)))d.setDate(d.getDate()-1);
@@ -683,6 +686,23 @@ function bestStreak(){
   const ks=allDays().filter(achieved).sort();let best=0,cur=0,prev=null;
   for(const k of ks){const d=k2d(k);cur=(prev&&Math.round((d-prev)/864e5)===1)?cur+1:1;best=Math.max(best,cur);prev=d;}
   return best;
+}
+/* ===== くりこし =====
+   終わらなかったタスクを べつの日へ うつす(くりかえしタスクは つぎの日にも 自動で 入るので うつさない) */
+function carryTasks(fromK,toK){
+  const T=tasksOf(fromK),mv=T.filter(t=>!t.done&&!t.rid);if(!mv.length)return 0;
+  if(S.run&&mv.some(t=>t.id===S.run.id)){const t=mv.find(x=>x.id===S.run.id);t.prog=(t.prog||0)+(Date.now()-S.run.start)/60000;S.run=null;}
+  S.tasks[fromK]=T.filter(t=>!mv.includes(t));if(!S.tasks[fromK].length)delete S.tasks[fromK];
+  const D=(S.tasks[toK]=S.tasks[toK]||[]);mv.forEach(t=>{if(t.part)markPart(fromK);t.from=t.from||fromK;delete t.part;D.push(t);});
+  return mv.length;
+}
+// 日付が かわったら、7日前までの のこりを 今日へ(1日1回)
+function autoCarry(){
+  const tk=dkey();if(!S.settings.carry||S.lastCarry===tk)return 0;
+  let n=0;for(let i=1;i<=7;i++)n+=carryTasks(addDays(tk,-i),tk);
+  S.lastCarry=tk;save();
+  if(n)setTimeout(()=>toast(`↪ 終わらなかった タスク ${n}件を 今日に くりこしました`),600);
+  return n;
 }
 const monsOf=k=>[...(S.mlog[k]||[]),...((S.hist[k]&&S.hist[k].mons)||[])];
 function vib(p){if(S.settings.vib&&navigator.vibrate){try{navigator.vibrate(p);}catch(e){}}}
@@ -994,7 +1014,8 @@ function taskPanel(key,pid){
   const tk=dkey(),T=tasksFor(key),past=key<tk,today=key===tk,future=key>tk;
   const rb=t=>{const r=t.rid&&S.routines.find(x=>x.id===t.rid),td=t.tid&&S.todos.find(x=>x.id===t.tid);return r?`<span class="rbadge">🔁 ${daysLabel(r.days)}</span>`:td?`<span class="rbadge">📌 ${td.done?'しめきり・やることリスト':td.due?dueInfo(td.due).t:'やることリスト'}</span>`:'';};
   const old=!T.length&&S.hist[key]&&S.hist[key].tasks?S.hist[key].tasks:null;
-  const tb=t=>t.min?`<span class="rbadge">⏱ ${t.done?fmtMin(t.min):`目標 ${fmtMin(t.min)}`}${t.part&&!t.done?` ・ とちゅうまで ${fmtMin(t.paid||0)}`:''}</span>`:'';
+  const cb=t=>t.from&&!t.done?`<span class="rbadge carry">↪ ${fmtDay(t.from)}から くりこし</span>`:'';
+  const tb=t=>cb(t)+(t.min?`<span class="rbadge">⏱ ${t.done?fmtMin(t.min):`目標 ${fmtMin(t.min)}`}${t.part&&!t.done?` ・ とちゅうまで ${fmtMin(t.paid||0)}`:''}</span>`:'');
   let h;
   if(old)h=old.map(t=>`<li class="task${t.done?' done':''}"><div class="tx">${esc(t.text)}</div>${t.done?'<span class="chk">✓</span>':''}</li>`).join('');
   else h=T.map(t=>t.done
@@ -1007,6 +1028,7 @@ function taskPanel(key,pid){
   return `<ul class="tasks">${h}</ul>${add}`;
 }
 function renderHome(){
+  autoCarry();
   if(materialize(dkey()))save();
   renderBanner();
   renderTodos();
@@ -1018,7 +1040,9 @@ function renderHome(){
   const I=dayInfo(tk);
   $('#prog').textContent=I.total?`${I.done} / ${I.total} 完了`:'';
   $('#tpToday').innerHTML=taskPanel(tk,'today');
-  $('#allDone').innerHTML=I.total&&I.done===I.total?'<div class="alldone">🎉 今日のタスクは ぜんぶ達成!</div>':'';
+  const left=tasksOf(tk).filter(t=>!t.done&&!t.rid).length;
+  $('#allDone').innerHTML=I.total&&I.done===I.total?'<div class="alldone">🎉 今日のタスクは ぜんぶ達成!</div>'
+    :left?`<button class="btn ghost sm" style="margin-top:10px" data-act="carryAll">➡ のこり ${left}件を 明日に くりこす</button>`:'';
   $('#tmLabel').textContent=fmtDay(tm);
   $('#tpTomorrow').innerHTML=taskPanel(tm,'tomorrow');
   $('#party').innerHTML=S.party.map((p,i)=>{
@@ -1100,7 +1124,7 @@ function itemDialog(n){
   modal(`<h3>${itemIcon(n)} ${esc(n)} <small class="dim">×${cnt}</small></h3><p class="note">${statLabel(it)} ${it&&it.eff?esc(it.eff):''}</p>${body}
   <div class="acts">${it&&it.sell?`<button class="btn" data-act="sellDlg" data-n="${esc(n)}">うる(${it.sell.toLocaleString()}G)</button>`:''}<button class="btn" data-act="closeModal">閉じる</button></div>`);
 }
-function renderSet(){$('#swSound').classList.toggle('on',S.settings.sound);$('#swVib').classList.toggle('on',S.settings.vib);$('#swAuto').classList.toggle('on',S.settings.auto);renderProt();}
+function renderSet(){$('#swSound').classList.toggle('on',S.settings.sound);$('#swVib').classList.toggle('on',S.settings.vib);$('#swAuto').classList.toggle('on',S.settings.auto);$('#swCarry').classList.toggle('on',S.settings.carry);renderProt();}
 function showView(v){
   VIEW=v;document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id==='v-'+v));
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
@@ -2069,7 +2093,7 @@ async function claimPartial(id){
   if(!confirm(`${prog}分 / ${t.min}分 で いったん おわりにしますか?\n${pay}分ぶんの ${R.exp}EXP と ${R.g}G を もらえます(モンスターは でません)。\nあとで つづきを やって 完了することも できます。`))return;
   BUSY=true;
   try{
-    t.paid=prog;t.part=true;S.gold+=R.g;
+    t.paid=prog;t.part=true;markPart(k);S.gold+=R.g;
     const msgs=[{t:`「${t.text}」\n${fmtMin(prog)} がんばった!`,k:'learn'},...gainExp(R.exp),{t:`${R.g}ゴールドを てにいれた!`,k:'gold'}];
     save();renderAll();
     await rewardOverlay(msgs);
@@ -2090,6 +2114,7 @@ function taskForm(k,t){
   <div class="chips" style="margin-bottom:8px">${[[30,'30分'],[60,'1時間'],[90,'1時間半'],[120,'2時間'],[180,'3時間'],['','なし']].map(([n,l])=>`<button data-act="tkQuick" data-n="${n}">${l}</button>`).join('')}</div>
   ${t.min?`<label>やった時間(分)<input type="number" id="tkProg" inputmode="numeric" min="0" max="1440" value="${Math.floor(t.prog||0)}"></label>`:''}
   <p class="note">名前に「2時間」「30分」と 書くと、自動で 目標時間に なります。時間つきの タスクは、とちゅうで おわっても やった時間ぶんの EXPと Gが もらえます。</p>
+  ${k<=dkey()&&!t.done&&!t.rid?`<button class="btn wide" style="margin-bottom:8px" data-act="tkTomorrow">➡ ${k===dkey()?'明日':'今日'}に うつす</button>`:''}
   <div class="acts"><button class="btn" data-act="closeModal">キャンセル</button><button class="btn primary" data-act="tkSave">保存</button></div>`);
 }
 function saveTaskForm(){
@@ -2278,6 +2303,13 @@ const ACT={
   editTask:b=>{const {t}=findTask(b);if(t)taskForm(b.dataset.k,t);},
   tkQuick:b=>{$('#tkMin').value=b.dataset.n;},
   tkSave:()=>saveTaskForm(),
+  tkTomorrow:()=>{
+    const tk=dkey(),to=ETK.k===tk?addDays(tk,1):tk,T=tasksOf(ETK.k),t=T.find(x=>x.id===ETK.id);if(!t)return closeModal();
+    if(S.run&&S.run.id===t.id){t.prog=(t.prog||0)+(Date.now()-S.run.start)/60000;S.run=null;}
+    S.tasks[ETK.k]=T.filter(x=>x!==t);if(!S.tasks[ETK.k].length)delete S.tasks[ETK.k];
+    if(t.part)markPart(ETK.k);t.from=t.from||ETK.k;delete t.part;(S.tasks[to]=S.tasks[to]||[]).push(t);save();closeModal();renderAll();toast(`➡ ${fmtDay(to)}に うつしました`);
+  },
+  carryAll:()=>{const tk=dkey(),n=carryTasks(tk,addDays(tk,1));if(n){save();renderAll();toast(`➡ ${n}件を 明日(${fmtDay(addDays(tk,1))})に くりこしました`);}},
   tmToggle:b=>{const id=b.dataset.id;if(S.run&&S.run.id===id)stopTimer();else startTimer(id);},
   tmRec:b=>{const {t}=findById(b.dataset.id);if(t)recDialog(t);},
   recQuick:b=>{const i=$('#recMin');i.value=(parseInt(i.value,10)||0)+ +b.dataset.n;},
