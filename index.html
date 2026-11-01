@@ -445,6 +445,12 @@ h2{font-size:18px;margin:4px 0 12px}
 @keyframes tpick{50%{filter:drop-shadow(0 0 10px #ffd23f)}}
 .bch small{display:block;color:#9fe9ff;font-size:11px;margin:2px 0 0}
 .rbadge.carry{color:#ffb3d0}
+.wgttl{display:flex;align-items:baseline;gap:8px;font-weight:800;font-size:14px;margin:14px 0 8px}
+.wgttl .sub{font-size:11px;color:var(--sub);font-weight:600}
+.pgrid.wagon .pslot{min-height:76px;background:rgba(120,80,30,.18)}
+.pgrid.wagon .pslot .mic{width:40px;height:40px}
+.pt.wg{background:#c58b3a;color:#2a1600}
+.bgrid .wide{grid-column:1/-1;min-height:50px;background:#2a1a08;border-color:#e0a050}
 @media (prefers-reduced-motion:reduce){.rainbow.on{animation:none;opacity:.25}}
 </style>
 </head>
@@ -477,6 +483,8 @@ h2{font-size:18px;margin:4px 0 12px}
     <div class="card">
       <div class="ttl">パーティ <span class="sub">💰 <b id="goldNum">0</b> G</span></div>
       <div class="pgrid" id="party"></div>
+      <div class="wgttl">🐴 ばしゃ <span class="sub">たたかいで こうたい できる・経験値も もらえる</span></div>
+      <div class="pgrid wagon" id="wagon"></div>
     </div>
     <div class="card">
       <div class="ttl">明日の よてい <span class="sub" id="tmLabel"></span></div>
@@ -539,6 +547,7 @@ h2{font-size:18px;margin:4px 0 12px}
         <button class="btn sm" data-act="test" data-k="mon">バトル</button>
         <button class="btn sm" data-act="test" data-k="rare">1/256演出</button>
         <button class="btn sm" data-act="test" data-k="drop">ドロップ</button>
+        <button class="btn sm" data-act="test" data-k="bonus">ボーナスバトル</button>
       </div>
     </div>
     <div class="card">
@@ -612,7 +621,7 @@ const PAL=[['#3fa9ff','#8fd3ff','#ffffff','#2b6bff','#7ef0ff'],['#ffc83d','#ffe2
 
 /* ===== state ===== */
 const KEY='rewardGacha.v1';
-const fresh=()=>({v:1,tasks:{},bonus:{},hist:{},mlog:{},mons:{},party:[null,null,null,null],
+const fresh=()=>({v:1,tasks:{},bonus:{},hist:{},mlog:{},mons:{},party:[null,null,null,null],wagon:[null,null,null,null],
   settings:{sound:true,vib:true,auto:false,carry:true},stats:{wins:0},zsort:'no',lv:{},design:{},gold:0,bag:{},eq:{},boost:{},zview:'dex',msort:'lv',routines:[],rskip:{},todos:[]});
 // 古い形式のデータを今の形式にそろえる
 function migrate(s){
@@ -1045,11 +1054,12 @@ function renderHome(){
     :left?`<button class="btn ghost sm" style="margin-top:10px" data-act="carryAll">➡ のこり ${left}件を 明日に くりこす</button>`:'';
   $('#tmLabel').textContent=fmtDay(tm);
   $('#tpTomorrow').innerHTML=taskPanel(tm,'tomorrow');
-  $('#party').innerHTML=S.party.map((p,i)=>{
+  const slots=w=>S[w].map((p,i)=>{
     const m=p&&MB[p.no],nm=m&&owned(p.no)[p.i];
-    return nm?`<button class="pslot rk${rankOf(m.slots[0].p)}" style="--d:${i}" data-act="pslot" data-slot="${i}">${monIcon(m)}<span class="pn">${esc(nm)}</span><span class="plv">Lv${lvOf(p.no,p.i).lv}</span></button>`
-      :`<button class="pslot empty" data-act="pslot" data-slot="${i}"><span class="plus">+</span><span class="pn">あき</span></button>`;
+    return nm?`<button class="pslot rk${rankOf(m.slots[0].p)}" style="--d:${i}" data-act="pslot" data-w="${w}" data-slot="${i}">${monIcon(m)}<span class="pn">${esc(nm)}</span><span class="plv">Lv${lvOf(p.no,p.i).lv}</span></button>`
+      :`<button class="pslot empty" data-act="pslot" data-w="${w}" data-slot="${i}"><span class="plus">+</span><span class="pn">あき</span></button>`;
   }).join('');
+  $('#party').innerHTML=slots('party');$('#wagon').innerHTML=slots('wagon');
 }
 function renderZukan(){
   const mem=S.zview==='mem';
@@ -1256,9 +1266,13 @@ function stAt(m,lv){
   const [a,b]=m.st,t=b[0]>a[0]?(lv-a[0])/(b[0]-a[0]):0,f=i=>Math.round(a[i]+(b[i]-a[i])*t);
   return {hp:Math.max(1,f(2)),mp:f(3),atk:f(4),spd:f(5),def:f(6),int:f(7),luck:f(8)};
 }
-function partyMembers(){return S.party.map(p=>p&&MB[p.no]&&owned(p.no)[p.i]?{no:p.no,i:p.i,m:MB[p.no],name:owned(p.no)[p.i]}:null).filter(Boolean);}
+const memOf=arr=>(arr||[]).map(p=>p&&MB[p.no]&&owned(p.no)[p.i]?{no:p.no,i:p.i,m:MB[p.no],name:owned(p.no)[p.i]}:null).filter(Boolean);
+function partyMembers(){return memOf(S.party);}
+// 馬車の仲間(戦闘中に いれかえできる。経験値も もらえる)
+function wagonMembers(){return memOf(S.wagon);}
+const placeOf=(no,i)=>{for(const w of ['party','wagon']){const j=(S[w]||[]).findIndex(p=>p&&p.no===no&&p.i===i);if(j>=0)return {w,j};}return null;};
 function gainExp(n,test){
-  const mem=partyMembers(),msgs=[];if(!mem.length||!n)return msgs;
+  const mem=[...partyMembers(),...wagonMembers()],msgs=[];if(!mem.length||!n)return msgs;
   msgs.push({t:`なかまたちは ${n}ポイントの\nけいけんちを かくとく!`});
   if(test)return msgs;
   for(const p of mem){
@@ -1372,7 +1386,7 @@ function itemSkill(n,use){
   return {...k,name:n,mp:0,ef:`${use}の こうか`,item:true,base:use};
 }
 function mkAlly(p){
-  const c=charStats(p.no,p.i),f=mkF(p.m,c.lv,p.name,false),bonus=5+c.lv*2;
+  const c=charStats(p.no,p.i),f=mkF(p.m,c.lv,p.name,false),bonus=5+c.lv*2;f.ref=p;
   f.mhp=f.hp=c.hp;f.mmp=f.mp=c.mp;
   // 敵の強さはそうび前の値を基準にする(そうびを整えるほど有利になる)
   f.base={mhp:c.hp,atk:c.str+bonus,def:c.vit,spd:c.spd};
@@ -1398,13 +1412,13 @@ function renderMembers(){
   $('#zukanHead').innerHTML=`<div class="card"><div class="zstat"><div><small>なかま</small><b>${list.length}</b> 匹</div><div><small>しょじきん</small><b>${S.gold.toLocaleString()}</b> G</div></div></div>
   <div class="chips" style="margin-bottom:10px">${[['lv','レベル'],['attack','こうげき'],['defense','しゅび'],['hp','HP'],['spd','すばやさ']].map(([k,l])=>`<button data-act="msort" data-k="${k}"${key===k?' class="on"':''}>${l}</button>`).join('')}</div>`;
   $('#mlist').innerHTML=list.length?list.map(x=>{
-    const c=x.c,inP=S.party.some(p=>p&&p.no===x.no&&p.i===x.i);
-    return `<button class="mrow rk${rankOf(x.m.slots[0].p)}" data-act="mdet" data-no="${x.no}" data-i="${x.i}">${monIcon(x.m)}<div class="mmain"><div><b>${esc(x.nm)}</b> <small>${esc(x.m.name)}</small>${inP?' <span class="pt">PT</span>':''}</div>
+    const c=x.c,pl=placeOf(x.no,x.i);
+    return `<button class="mrow rk${rankOf(x.m.slots[0].p)}" data-act="mdet" data-no="${x.no}" data-i="${x.i}">${monIcon(x.m)}<div class="mmain"><div><b>${esc(x.nm)}</b> <small>${esc(x.m.name)}</small>${pl?(pl.w==='party'?' <span class="pt">PT</span>':' <span class="pt wg">🐴</span>'):''}</div>
       <div class="mst"><span>Lv<b>${c.lv}</b></span><span>HP<b>${c.hp}</b></span><span>MP<b>${c.mp}</b></span><span>こうげき<b>${c.attack}</b></span><span>しゅび<b>${c.defense}</b></span><span>すばやさ<b>${c.spd}</b></span></div></div></button>`;
   }).join(''):'<p class="empty">まだ なかまが いません</p>';
 }
 function memberDetail(no,i){
-  const m=MB[no],nm=owned(no)[i],L=lvOf(no,i),c=charStats(no,i),mx=maxLv(m),E=eqOf(no,i),slot=S.party.findIndex(p=>p&&p.no===no&&p.i===i);
+  const m=MB[no],nm=owned(no)[i],L=lvOf(no,i),c=charStats(no,i),mx=maxLv(m),E=eqOf(no,i),pl=placeOf(no,i);
   const stv=[['HP',c.hp],['MP',c.mp],['ちから',c.str],['すばやさ',c.spd],['みのまもり',c.vit],['かしこさ',c.int],['うんのよさ',c.luck],['こうげき力',c.attack],['しゅび力',c.defense]];
   const seeds=Object.keys(S.bag).filter(n=>SEEDS[n]),D=`data-no="${no}" data-i="${i}"`;
   modal(`<div class="md"><div class="mdi rk${rankOf(m.slots[0].p)}">${monIcon(m)}</div>
@@ -1419,7 +1433,8 @@ function memberDetail(no,i){
   <div class="ttl" style="margin-top:10px">じゅもん・とくぎ</div>
   <ul class="splist">${m.sp.map(x=>x[0]<=L.lv?`<li><b>${esc(x[1])}</b> <span class="badge">MP${x[2]}</span><small>${esc(x[3])}・${esc(x[4])}</small></li>`:`<li class="lock">Lv${x[0]} で なにかを おぼえる</li>`).join('')||'<li class="lock">おぼえる じゅもん・とくぎは ない</li>'}
   ${(c.fx.uses||[]).map(([n,u])=>`<li><b>${esc(n)}</b> <span class="badge">どうぐ</span><small>せんとうちゅうに つかうと ${esc(u)}</small></li>`).join('')}</ul>
-  <div class="acts">${slot>=0?`<button class="btn" data-act="pswap" data-slot="${slot}">入れかえ</button><button class="btn" data-act="partyClear" data-slot="${slot}">パーティからはずす</button>`:`<button class="btn" data-act="toParty" ${D}>パーティに入れる</button>`}</div>
+  <p class="note" style="text-align:center;margin:8px 0 0">いま: ${pl?(pl.w==='party'?'パーティ':'🐴 ばしゃ'):'待機中'}</p>
+  <div class="acts">${pl&&pl.w==='party'?'':`<button class="btn" data-act="moveTo" data-to="party" ${D}>パーティへ</button>`}${pl&&pl.w==='wagon'?'':`<button class="btn" data-act="moveTo" data-to="wagon" ${D}>🐴 ばしゃへ</button>`}${pl?`<button class="btn" data-act="partyClear" data-w="${pl.w}" data-slot="${pl.j}">はずす</button>`:''}</div>
   <div class="acts"><button class="btn" data-act="design" data-no="${no}">🎨 デザイン</button><button class="btn" data-act="closeModal">閉じる</button></div></div>`);
 }
 function eqPicker(no,i,slot){
@@ -1785,7 +1800,10 @@ function chooseCmd(u,idx){
   return new Promise(res=>{
     const box=$('#bcmd');let cur=null;
     const setPick=fn=>{B.picking=fn;$('#estage').classList.toggle('picking',!!fn);};
-    const main=()=>{setPick(null);box.innerHTML=`<div class="bch">${esc(u.name)}は どうする?</div><div class="bgrid"><button data-b="atk">⚔ たたかう</button><button data-b="spell"${u.sp.length?'':' disabled'}>✨ じゅもん・とくぎ</button><button data-b="guard">🛡 ぼうぎょ</button>${idx===0?'<button data-b="run">🏃 にげる</button>':'<button data-b="back">↩ もどる</button>'}</div>`;};
+    const main=()=>{setPick(null);box.innerHTML=`<div class="bch">${esc(u.name)}は どうする?</div><div class="bgrid"><button data-b="atk">⚔ たたかう</button><button data-b="spell"${u.sp.length?'':' disabled'}>✨ じゅもん・とくぎ</button><button data-b="guard">🛡 ぼうぎょ</button>${idx===0?'<button data-b="run">🏃 にげる</button>':'<button data-b="back">↩ もどる</button>'}${B.bench.length?'<button data-b="swap" class="wide">🐴 いれかえ(馬車)</button>':''}</div>`;};
+    let SWK=null;
+    const swapOut=()=>{setPick(null);box.innerHTML=`<div class="bch">だれを 馬車に もどす?</div><div class="blist">${B.allies.map((a,k)=>`<button data-b="so" data-k="${k}"><b>${esc(a.name)}</b><small>${a.hp<=0?'しんでいる':`HP ${a.hp}/${a.mhp}`}</small></button>`).join('')}${B.allies.length<4?'<button data-b="so" data-k="new"><b>(あいている わくに 入れる)</b></button>':''}</div><button class="bback" data-b="main">↩ もどる</button>`;};
+    const swapIn=k=>{SWK=k;box.innerHTML=`<div class="bch">馬車の だれと いれかえる?</div><div class="blist">${B.bench.map((x,j)=>{const f=x.f,dead=f&&f.hp<=0;return `<button data-b="si" data-j="${j}"${dead?' disabled':''}><b>${esc(x.ref.name)} <span>Lv${f?f.lv:lvOf(x.ref.no,x.ref.i).lv}</span></b><small>${dead?'しんでいる':f?`HP ${f.hp}/${f.mhp}`:'げんき'}</small></button>`;}).join('')}</div><button class="bback" data-b="swap">↩ もどる</button>`;};
     const spells=()=>{setPick(null);box.innerHTML=`<div class="bch">${esc(u.name)} の じゅもん・とくぎ <small>MP ${u.mp}</small></div><div class="blist">${u.sp.map((s,j)=>{
       const ok=canUse(u,s)&&!(s.kind==='revive'&&!B.allies.some(a=>a.hp<=0));
       return `<button data-b="sp" data-j="${j}"${ok?'':' disabled'}><b>${esc(s.name)} <span>MP${s.mp}</span></b><small>${s.kind==='field'?'せんとうでは つかえない':esc(s.tg+'・'+s.ef)}</small></button>`;}).join('')}</div><button class="bback" data-b="main">↩ もどる</button>`;};
@@ -1808,6 +1826,7 @@ function chooseCmd(u,idx){
       if(k==='atk'){cur=null;foePick(null);}
       else if(k==='guard'||k==='run'||k==='back')done({type:k});
       else if(k==='spell')spells();else if(k==='main')main();
+      else if(k==='swap')swapOut();else if(k==='so')swapIn(b.dataset.k==='new'?'new':+b.dataset.k);else if(k==='si')done({type:'swap',k:SWK,j:+b.dataset.j});
       else if(k==='sp'){const s=u.sp[+b.dataset.j];cur=s;if(s.tg==='味方単体')targets(s);else if(needsFoeTarget(s))foePick(s);else done({type:'spell',spell:s});}
       else if(k==='tg')done({type:'spell',spell:cur,target:B.allies[+b.dataset.k]});
       else if(k==='et')pickDone(B.enemies[+b.dataset.k]);
@@ -1825,11 +1844,28 @@ function makeEncounter(first,nAllies){
 }
 // 敵の なまえ(同じ しゅるいが 2体以上なら A・B・C…)
 function enemyNames(list){const c={},k={};list.forEach(m=>c[m.no]=(c[m.no]||0)+1);return list.map(m=>c[m.no]>1?m.name+'ABCD'[(k[m.no]=(k[m.no]||0)+1)-1]:m.name);}
-function drawStage(list){
+function drawStage(list,bonus){
   const names=enemyNames(list),st=$('#estage');st.className='estage n'+list.length;
   st.innerHTML=list.map((m,i)=>{const n=owned(m.no).length,sl=n<3?m.slots[n]:null;
-    return `<div class="ewrap" id="ew${i}" data-k="${i}"><div class="mon-ico" id="ei${i}">${monIcon(m)}</div><div class="ename">${esc(names[i])}</div><div class="ehp" hidden><i id="eh${i}"></i></div><div class="echip rk${sl?rankOf(sl.p):1}">${sl?`なかま 1/${sl.p}`:'なかま 3/3'}</div></div>`;}).join('');
+    return `<div class="ewrap" id="ew${i}" data-k="${i}"><div class="mon-ico" id="ei${i}">${monIcon(m)}</div><div class="ename">${esc(names[i])}</div><div class="ehp" hidden><i id="eh${i}"></i></div><div class="echip rk${sl?rankOf(sl.p):1}">${sl?(bonus?(sl.p<=2?'なかま 確定!':`なかま 1/${sl.p/2}(2倍)`):`なかま 1/${sl.p}`):'なかま 3/3'}</div></div>`;}).join('');
   return names;
+}
+// 馬車との いれかえ(k=パーティの位置 or 'new'、j=馬車の何番目)
+async function doSwap(k,j,quiet){
+  const it=B.bench[j];if(!it)return;
+  const inF=it.f||mkAlly(it.ref);
+  let msg;
+  if(k==='new'){B.allies.push(inF);B.bench.splice(j,1);msg=`${inF.name}が 馬車から\nたたかいに くわわった!`;}
+  else{const out=B.allies[k];B.allies[k]=inF;B.bench[j]={ref:out.ref,f:out};msg=`${out.name}は 馬車に もどった。\n${inF.name}が たたかいに くわわった!`;}
+  renderB();SND.click();
+  if(!quiet){$('#bcmd').hidden=true;$('#dqwin').hidden=false;await bsay(msg);}
+}
+const benchAlive=()=>B.bench.findIndex(x=>!x.f||x.f.hp>0);
+// オートのときは たおれた なかまを 馬車の げんきな なかまと こうたい
+async function autoSwap(){for(let k=0;k<B.allies.length;k++){if(B.allies[k].hp>0)continue;const j=benchAlive();if(j<0)break;await doSwap(k,j);}}
+async function rescue(){
+  let n=0;for(let k=0;k<B.allies.length;k++){if(B.allies[k].hp>0)continue;const j=benchAlive();if(j<0)break;await doSwap(k,j,true);n++;}
+  if(n){restart($('#mon'),'shake');await bsay('馬車から なかまが とびだした!');}
 }
 async function battle(list,names,opt={}){
   const allies=partyMembers().map(mkAlly);
@@ -1847,7 +1883,7 @@ async function battle(list,names,opt={}){
     e.sp=e.sp.filter(s=>!['field','sac','megazal','revive','cure'].includes(s.kind));
     return e;
   });
-  B={allies,enemies,turn:0,fub:0,efub:0,active:null,cmdAbort:null,picking:null,lastKO:null};
+  B={allies,enemies,turn:0,fub:0,efub:0,active:null,cmdAbort:null,picking:null,lastKO:null,bench:wagonMembers().map(ref=>({ref,f:null}))};
   const ov=$('#mon');ov.classList.add('inb');$('#bparty').hidden=false;$('#autoBtn').hidden=false;syncAuto();
   document.querySelectorAll('#estage .ehp').forEach(e=>e.hidden=false);
   enemies.forEach(e=>{const c=document.querySelector(`#ew${e.idx} .ename`);if(c)c.innerHTML=`${esc(e.name)} <small>Lv${e.lv}</small>`;});
@@ -1855,24 +1891,29 @@ async function battle(list,names,opt={}){
   let result=null;
   while(!result){
     B.turn++;
-    const able=alive(B.allies),acts=[];let run=false,idx=0;
-    while(idx<able.length){
-      const u=able[idx];
-      if(S.settings.auto||u.st.sleep||u.st.para){acts[idx]=S.settings.auto?allyPlan(u):{type:'atk'};idx++;continue;}
+    // 行動は キャラごとに 記録(いれかえで 並びが かわっても ずれない)
+    const acts=new Map();let run=false,idx=0;
+    if(S.settings.auto)await autoSwap();
+    const first=()=>B.allies.findIndex(a=>a.hp>0);
+    while(idx<B.allies.length){
+      const u=B.allies[idx];
+      if(u.hp<=0){idx++;continue;}
+      if(S.settings.auto||u.st.sleep||u.st.para){acts.set(u,S.settings.auto?allyPlan(u):{type:'atk'});idx++;continue;}
       B.active=u;renderB();
-      const c=await chooseCmd(u,idx);
+      const c=await chooseCmd(u,idx===first()?0:1);
       if(c.type==='auto')continue;
-      if(c.type==='back'){idx=Math.max(0,idx-1);continue;}
+      if(c.type==='back'){let j=idx-1;while(j>=0&&B.allies[j].hp<=0)j--;idx=Math.max(first(),j);continue;}
       if(c.type==='run'){run=true;break;}
-      acts[idx]=c;idx++;
+      if(c.type==='swap'){await doSwap(c.k,c.j);continue;}
+      acts.set(u,c);idx++;
     }
     B.active=null;$('#bcmd').hidden=true;$('#dqwin').hidden=false;renderB();
     const Q=[];
     if(run){
-      await bsay(`${able[0].name}たちは にげだした!`);
+      await bsay(`${alive(B.allies)[0].name}たちは にげだした!`);
       if(Math.random()<.5+B.turn*.1){SND.miss();await bsay('うまく にげきれた!',1);result='run';break;}
       await bsay('しかし まわりこまれてしまった!',1);
-    }else acts.forEach((a,k)=>{Q.push({...a,actor:able[k]});if(a.type==='guard')able[k].guard=true;});
+    }else acts.forEach((a,u)=>{if(B.allies.includes(u)&&u.hp>0){Q.push({...a,actor:u});if(a.type==='guard')u.guard=true;}});
     for(const e of alive(B.enemies))Q.push({actor:e,enemyTurn:true});
     if(ne===1&&B.allies.length>=3&&Math.random()<BAL.extra)Q.push({actor:enemies[0],enemyTurn:true});
     Q.forEach(a=>a.ord=(a.type==='guard'?999:0)+a.actor.spd*rnd(.5,1));
@@ -1884,6 +1925,8 @@ async function battle(list,names,opt={}){
       await doAct(a);renderB();
     }
     if(alive(B.enemies).length&&alive(B.allies).length)await endTurn();
+    // 前の なかまが ぜんいん たおれても、馬車に うごける なかまが いれば とびだす
+    if(alive(B.enemies).length&&!alive(B.allies).length)await rescue();
     if(!alive(B.enemies).length)result='win';else if(!alive(B.allies).length)result='lose';
   }
   ov.classList.remove('inb');$('#bparty').hidden=true;$('#autoBtn').hidden=true;$('#bcmd').hidden=true;$('#dqwin').hidden=false;
@@ -1911,7 +1954,13 @@ async function runMonster(opt={}){
   $('#estage').innerHTML='';$('#dqtxt').textContent='';$('#monBadge').innerHTML='';
   ov.hidden=false;FX.attach($('#monc'));FX.cy=FX.H*.27;FX.start();await nextFrame();ov.classList.add('show');
   if(opt.exp&&opt.exp.length)await showMsgs(opt.exp);
-  const names=drawStage(list),icos=list.map((m,i)=>document.getElementById('ei'+i));
+  if(opt.bonus){
+    const b=$('#rareBanner');b.innerHTML='🎁 ボーナスバトル!';restart(b,'on');SND.fanfare(1);vib([80,40,80]);
+    FX.confetti(120,PAL[1],{rain:true});
+    await say('ボーナスバトル!\nこの たたかいでは なかまに なる\nかくりつが 2ばい!');
+    b.className='rare-banner';
+  }
+  const names=drawStage(list,opt.bonus),icos=list.map((m,i)=>document.getElementById('ei'+i));
   await sleep(150);icos.forEach((ic,i)=>setTimeout(()=>{ic.classList.add('appear');},i*160));SND.monAppear();vib(40);
   await sleep(700+list.length*160);icos.forEach(ic=>ic.className='mon-ico idle');
   const groups=[];list.forEach(m=>{const g=groups.find(x=>x.m===m);g?g.n++:groups.push({m,n:1});});
@@ -1942,11 +1991,12 @@ async function runMonster(opt={}){
   const have=opt.fresh?[]:owned(m.no).slice(),n=have.length,slot=n<3?m.slots[n]:null;
   const leave=async()=>{ico.className='mon-ico leave';SND.leave();await say(`${m.name}は さっていった…`);return closeMon();};
   if(!slot)return leave();
-  const join=opt.force!=null?opt.force:Math.random()<1/slot.p;
+  const join=opt.force!=null?opt.force:Math.random()<(opt.bonus?2:1)/slot.p;
   if(!join)return leave();
   if(!opt.test){
     S.mons[m.no]=[...have,slot.name];lvOf(m.no,n);
-    const e=S.party.findIndex(p=>!p||!owned(p.no)[p.i]);if(e>=0)S.party[e]={no:m.no,i:n};
+    const e=S.party.findIndex(p=>!p||!owned(p.no)[p.i]),w=S.wagon.findIndex(p=>!p||!owned(p.no)[p.i]);
+    if(e>=0)S.party[e]={no:m.no,i:n};else if(w>=0)S.wagon[w]={no:m.no,i:n};
     (S.mlog[dkey()]=S.mlog[dkey()]||[]).push(`${slot.name}(${m.name})`);save();renderAll();
   }
   focusLast(last);
@@ -2145,12 +2195,15 @@ ${fmtMin(t.min)} やりきった!`,k:'learn'}),ex.push({t:`${tr.g}ゴールド�
       td.done=true;td.doneAt=Date.now();
       if(td.due&&tk<=td.due)ex.push({t:'しめきりを まもった!',k:'learn'},...gainExp(EXP_DEADLINE).map(x=>x.k?x:{t:'ボーナス! '+x.t}));
     }
+    let bonusBattle=false;
     if(T.every(x=>x.done)&&!S.bonus[tk]){
-      S.bonus[tk]=true;
+      S.bonus[tk]=true;bonusBattle=true;
       ex.push({t:'きょうの タスクを\nすべて おえた!',k:'all'},...gainExp(EXP_ALL).map(x=>x.k?x:{t:'ボーナス! '+x.t}));
     }
     save();renderAll();
     await runMonster({exp:ex});
+    // ぜんぶ おわらせた ごほうび:仲間に なる 確率 2倍の たたかい
+    if(bonusBattle)await runMonster({bonus:true});
   }finally{BUSY=false;renderAll();}
 }
 async function runTest(k){
@@ -2158,6 +2211,7 @@ async function runTest(k){
   try{
     if(k==='mon')await runMonster({test:true});
     else if(k==='drop')await runMonster({test:true,forceDrop:true});
+    else if(k==='bonus')await runMonster({test:true,bonus:true});
     else if(k==='rare'){const c=MONSTERS.filter(m=>m.slots[0].p>=256);await runMonster({test:true,fresh:true,force:true,noBattle:true,m:pickR(c)});}
   }finally{BUSY=false;}
 }
@@ -2216,15 +2270,16 @@ function deleteRoutine(){
   save();closeModal();renderAll();toast('くりかえしを やめました');
 }
 
-function partyPicker(slot){
+const placeLabel=(no,i)=>{const p=placeOf(no,i);return p?(p.w==='party'?' ・ パーティ中':' ・ ばしゃ中'):'';};
+function partyPicker(slot,w='party'){
   const items=[];MONSTERS.forEach(m=>owned(m.no).forEach((nm,i)=>items.push({m,nm,i})));
-  modal(`<h3>パーティ ${slot+1}枠目</h3>${items.length?`<div class="plist">${items.map(x=>`<button data-act="partySet" data-slot="${slot}" data-no="${x.m.no}" data-i="${x.i}">${monIcon(x.m)}<div><b>${esc(x.nm)} <span class="plv">Lv${lvOf(x.m.no,x.i).lv}</span></b><small>${esc(x.m.name)} ${x.i+1}匹目${S.party.some(p=>p&&p.no===x.m.no&&p.i===x.i)?' ・ パーティ中':''}</small></div></button>`).join('')}</div>`:'<p class="empty">まだ仲間がいません。<br>タスクを完了してガチャを引くと、モンスターが現れることがあるよ!</p>'}
-  <div class="acts">${S.party[slot]?`<button class="btn" data-act="partyClear" data-slot="${slot}">はずす</button>`:''}<button class="btn" data-act="closeModal">閉じる</button></div>`);
+  modal(`<h3>${w==='party'?'パーティ':'🐴 ばしゃ'} ${slot+1}枠目</h3>${items.length?`<div class="plist">${items.map(x=>`<button data-act="partySet" data-w="${w}" data-slot="${slot}" data-no="${x.m.no}" data-i="${x.i}">${monIcon(x.m)}<div><b>${esc(x.nm)} <span class="plv">Lv${lvOf(x.m.no,x.i).lv}</span></b><small>${esc(x.m.name)} ${x.i+1}匹目${placeLabel(x.m.no,x.i)}</small></div></button>`).join('')}</div>`:'<p class="empty">まだ仲間がいません。<br>タスクを完了すると、モンスターが あらわれるよ!</p>'}
+  <div class="acts">${S[w][slot]?`<button class="btn" data-act="partyClear" data-w="${w}" data-slot="${slot}">はずす</button>`:''}<button class="btn" data-act="closeModal">閉じる</button></div>`);
 }
 function monDetail(no){
   const m=MB[no],o=owned(no),n=o.length;
   modal(`<div class="md"><div class="mdi rk${rankOf(m.slots[0].p)}">${monIcon(m,!n)}</div><h3 style="margin:4px 0">No.${pad3(m.id)} ${n?esc(m.name):'???'}</h3>
-  <table class="slots">${m.slots.map((s,i)=>{const inP=S.party.some(p=>p&&p.no===no&&p.i===i);return `<tr><td>${i+1}匹目</td><td class="p">1/${s.p}</td><td>${o[i]?`<button class="lnk" data-act="mdet" data-no="${no}" data-i="${i}">${esc(o[i])} <span class="plv">Lv${lvOf(no,i).lv}</span></button>`:'???'}</td><td style="text-align:right">${o[i]?(inP?'<span class="sub" style="font-size:12px;color:var(--ok)">パーティ中</span>':`<button class="btn sm" data-act="toParty" data-no="${no}" data-i="${i}">パーティへ</button>`):''}</td></tr>`;}).join('')}</table>
+  <table class="slots">${m.slots.map((s,i)=>{const inP=placeOf(no,i);return `<tr><td>${i+1}匹目</td><td class="p">1/${s.p}</td><td>${o[i]?`<button class="lnk" data-act="mdet" data-no="${no}" data-i="${i}">${esc(o[i])} <span class="plv">Lv${lvOf(no,i).lv}</span></button>`:'???'}</td><td style="text-align:right">${o[i]?(inP?`<span class="sub" style="font-size:12px;color:var(--ok)">${inP.w==='party'?'パーティ中':'ばしゃ中'}</span>`:`<button class="btn sm" data-act="toParty" data-no="${no}" data-i="${i}">パーティへ</button>`):''}</td></tr>`;}).join('')}</table>
   ${n?`<p class="note">たおすと ${m.g}G ・ ときどき ${itemIcon(m.drop[0])}${esc(m.drop[0])}(1/${m.drop[1]}) を おとす ・ そうびグループ ${m.eq}</p>`:''}
   <div class="acts">${n?`<button class="btn" data-act="design" data-no="${no}">🎨 デザインを変える</button>`:''}<button class="btn" data-act="closeModal">閉じる</button></div></div>`);
 }
@@ -2323,7 +2378,7 @@ const ACT={
   bagSeed:b=>{const n=b.dataset.n;useSeed(+b.dataset.no,+b.dataset.i,n);renderAll();if(S.bag[n])itemDialog(n);else closeModal();},
   sellDlg:b=>{const n=b.dataset.n,it=IT(n);if(!it||!it.sell||!S.bag[n])return;if(!confirm(`${n}を ${it.sell}Gで うりますか?`))return;bagAdd(n,-1);S.gold+=it.sell;save();SND.coin();toast(`${n}を うった (+${it.sell}G)`);renderAll();if(S.bag[n])itemDialog(n);else closeModal();},
 
-  pslot:b=>{const k=+b.dataset.slot,p=S.party[k];if(p&&owned(p.no)[p.i])memberDetail(p.no,p.i);else partyPicker(k);},
+  pslot:b=>{const w=b.dataset.w||'party',k=+b.dataset.slot,p=S[w][k];if(p&&owned(p.no)[p.i])memberDetail(p.no,p.i);else partyPicker(k,w);},
   mdet:b=>memberDetail(+b.dataset.no,+b.dataset.i),
   eqPick:b=>eqPicker(+b.dataset.no,+b.dataset.i,b.dataset.s),
   eqSet:b=>{const no=+b.dataset.no,i=+b.dataset.i,n=b.dataset.n;equip(no,i,b.dataset.s,n||null);SND.click();toast(n?`${owned(no)[i]}は ${n}を そうびした!`:'そうびを はずした');memberDetail(no,i);renderAll();},
@@ -2340,7 +2395,7 @@ const ACT={
     save();SND.coin();closeModal();renderAll();
   },
   sell:b=>{const n=b.dataset.n,it=IT(n);if(!it||!it.sell||!S.bag[n])return;if(!confirm(`${n}を ${it.sell}Gで うりますか?`))return;bagAdd(n,-1);S.gold+=it.sell;save();SND.coin();renderAll();},
-  pswap:b=>partyPicker(+b.dataset.slot),
+  pswap:b=>partyPicker(+b.dataset.slot,b.dataset.w||'party'),
   design:b=>designEditor(+b.dataset.no),
   edSet:b=>{const k=b.dataset.k;ED.L[k]=k==='eye'||k==='mouth'?+b.dataset.v:b.dataset.v;renderEd();},
   edTog:b=>{const k=b.dataset.k;ED.L[k]=!ED.L[k];renderEd();},
@@ -2354,13 +2409,19 @@ const ACT={
     delete SVG_CACHE[ED.no];closeModal();renderAll();toast('デザインを保存しました');
   },
   partySet:b=>{
-    const slot=+b.dataset.slot,ref={no:+b.dataset.no,i:+b.dataset.i};
-    const j=S.party.findIndex(p=>p&&p.no===ref.no&&p.i===ref.i);
-    if(j>=0&&j!==slot)S.party[j]=S.party[slot];
-    S.party[slot]=ref;save();closeModal();renderAll();
+    const w=b.dataset.w||'party',slot=+b.dataset.slot,ref={no:+b.dataset.no,i:+b.dataset.i},cur=S[w][slot];
+    // すでに パーティ/ばしゃ に いれば、その場所と 入れかえる
+    const pl=placeOf(ref.no,ref.i);if(pl&&!(pl.w===w&&pl.j===slot))S[pl.w][pl.j]=cur;
+    S[w][slot]=ref;save();closeModal();renderAll();
   },
-  partyClear:b=>{S.party[+b.dataset.slot]=null;save();closeModal();renderAll();},
-  toParty:b=>{
+  partyClear:b=>{S[b.dataset.w||'party'][+b.dataset.slot]=null;save();closeModal();renderAll();},
+  moveTo:b=>{
+    const to=b.dataset.to,no=+b.dataset.no,i=+b.dataset.i,A=S[to],e=A.findIndex(p=>!p||!owned(p.no)[p.i]),lb=to==='party'?'パーティ':'ばしゃ';
+    if(e>=0){const pl=placeOf(no,i);if(pl)S[pl.w][pl.j]=null;A[e]={no,i};save();toast(`${owned(no)[i]}を ${lb}に 入れました`);closeModal();renderAll();}
+    else modal(`<h3>${lb}の だれと 入れかえる?</h3><div class="plist">${A.map((p,k)=>{const m=MB[p.no];return `<button data-act="partySet" data-w="${to}" data-slot="${k}" data-no="${no}" data-i="${i}">${monIcon(m)}<div><b>${esc(owned(p.no)[p.i])}</b><small>${k+1}枠目</small></div></button>`;}).join('')}</div><div class="acts"><button class="btn" data-act="closeModal">やめる</button></div>`);
+  },
+  toParty:b=>{b.dataset.to='party';ACT.moveTo(b);},
+  toPartyOld:b=>{
     const no=+b.dataset.no,i=+b.dataset.i,e=S.party.findIndex(p=>!p||!owned(p.no)[p.i]);
     if(e>=0){S.party[e]={no,i};save();toast(`${owned(no)[i]}をパーティに入れました`);monDetail(no);renderAll();}
     else modal(`<h3>だれと入れかえる?</h3><div class="plist">${S.party.map((p,k)=>{const m=MB[p.no];return `<button data-act="partySet" data-slot="${k}" data-no="${no}" data-i="${i}">${monIcon(m)}<div><b>${esc(owned(p.no)[p.i])}</b><small>${k+1}枠目</small></div></button>`;}).join('')}</div><div class="acts"><button class="btn" data-act="closeModal">やめる</button></div>`);
